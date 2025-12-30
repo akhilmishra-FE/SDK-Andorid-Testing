@@ -2,8 +2,12 @@
 jdk:
   - openjdk17
 
-# Build the library module - JitPack will auto-detect and publish the AAR
+# Build the library module
 build:
   - chmod +x ./gradlew
-  - ./gradlew :andorid-autopay-demo-lib:clean
+  - ./gradlew :andorid-autopay-demo-lib:clean --stacktrace
   - ./gradlew :andorid-autopay-demo-lib:assembleRelease --stacktrace
+
+# Install to Maven local for JitPack to publish
+install:
+  - ./gradlew :andorid-autopay-demo-lib:publishToMavenLocal --stacktrace
