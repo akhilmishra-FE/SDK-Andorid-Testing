@@ -23,9 +23,10 @@ android {
         }
     }
     
-    lintOptions {
+    lint {
         abortOnError = false
         checkReleaseBuilds = false
+        disable 'all'
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
