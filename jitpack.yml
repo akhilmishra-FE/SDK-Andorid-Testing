@@ -2,18 +2,31 @@
 jdk:
   - openjdk17
 
-before_install:
-  - ./scripts/prepareJitpackEnvironment.sh
-
 # Build the library module
 build:
+  - chmod +x ./gradlew
   - ./gradlew :andorid-autopay-demo-lib:clean
   - ./gradlew :andorid-autopay-demo-lib:assembleRelease
-  # Copy AAR to root level for easy access
   - cp andorid-autopay-demo-lib/build/outputs/aar/andorid-autopay-demo-lib-release.aar ./andorid-autopay-demo-lib-release.aar
 
-# Install the AAR file from root level to Maven repository for JitPack
+# Install the AAR file to Maven repository for JitPack
 install:
-  - FILE="-Dfile=./andorid-autopay-demo-lib-release.aar"
-  - mvn install:install-file $FILE -DgroupId=com.github.akhilmishra-FE -DartifactId=SDK-Andorid-Testing -Dversion=$TAG_NAME -Dpackaging=aar -DgeneratePom=true
-
+  - |
+    VERSION=${TAG_NAME}
+    if [ -z "$VERSION" ]; then
+      VERSION=${GIT_TAG_NAME}
+    fi
+    # Remove 'v' prefix if present
+    VERSION=${VERSION#v}
+    
+    if [ -f "./andorid-autopay-demo-lib-release.aar" ]; then
+      mvn install:install-file -Dfile=./andorid-autopay-demo-lib-release.aar \
+        -DgroupId=com.github.akhilmishra-FE \
+        -DartifactId=SDK-Andorid-Testing \
+        -Dversion=${VERSION} \
+        -Dpackaging=aar \
+        -DgeneratePom=true
+    else
+      echo "Error: AAR file not found at root level"
+      exit 1
+    fi
