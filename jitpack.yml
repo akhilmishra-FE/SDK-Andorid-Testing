@@ -1,4 +1,5 @@
-# configuration file for building snapshots and releases with jitpack.io
+# JitPack configuration for SDK-Andorid-Testing
+# Compatible with Gradle 8.2, AGP 8.2.0, Kotlin 1.9.20
 jdk:
   - openjdk17
 
