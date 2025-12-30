@@ -27,11 +27,11 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
     kotlinOptions {
-        jvmTarget = '17'
+        jvmTarget = '11'
     }
     buildFeatures {
         compose true
@@ -66,8 +66,10 @@ afterEvaluate {
         publications {
             maven(MavenPublication) {
                 groupId = 'com.github.akhilmishra-FE'
+                // For JitPack, artifactId should match the repository name
                 artifactId = 'SDK-Andorid-Testing'
-                version = '1.0.0'
+                // Version will be set by JitPack from the tag
+                version = project.findProperty('VERSION_NAME') ?: '1.0.2'
                 
                 // Publish the AAR artifact - this automatically includes AAR and sources JAR
                 from components.release

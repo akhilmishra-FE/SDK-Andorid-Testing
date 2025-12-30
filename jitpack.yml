@@ -1,8 +1,13 @@
 # configuration file for building snapshots and releases with jitpack.io
 jdk:
-  - openjdk17
+  - openjdk11
 
-# Build the library module - JitPack will auto-detect and publish the AAR
+# For multi-module projects, specify the subproject
+subprojects:
+  - andorid-autopay-demo-lib
+
+# Build the library module
 build:
   - chmod +x ./gradlew
-  - ./gradlew :andorid-autopay-demo-lib:assembleRelease
+  - ./gradlew :andorid-autopay-demo-lib:clean
+  - ./gradlew :andorid-autopay-demo-lib:assembleRelease --stacktrace
