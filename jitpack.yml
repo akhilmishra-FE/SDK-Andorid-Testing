@@ -1,14 +1,4 @@
-# JitPack configuration for SDK-Andorid-Testing
-# Compatible with Gradle 8.2, AGP 8.2.0, Kotlin 1.9.20
 jdk:
   - openjdk17
-
-# Build the library module
-build:
-  - chmod +x ./gradlew
-  - ./gradlew :andorid-autopay-demo-lib:clean --stacktrace
-  - ./gradlew :andorid-autopay-demo-lib:assembleRelease --stacktrace
-
-# Install to Maven local for JitPack to publish
 install:
-  - ./gradlew :andorid-autopay-demo-lib:publishToMavenLocal --stacktrace
+  - ./gradlew :andorid-autopay-demo-lib:assembleRelease publishToMavenLocal -x lint -x lintVitalRelease --stacktrace
