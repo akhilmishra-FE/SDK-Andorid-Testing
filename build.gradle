@@ -2,13 +2,5 @@
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.kotlin.android) apply false
-    alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.android.library) apply false
-}
-
-// Workaround for Gradle 8.13 bug with outgoingVariants task
-tasks.configureEach {
-    if (name == 'outgoingVariants') {
-        enabled = false
-    }
 }
