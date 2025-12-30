@@ -1,0 +1,17 @@
+# configuration file for building snapshots and releases with jitpack.io
+jdk:
+  - openjdk17
+
+before_install:
+  - ./scripts/prepareJitpackEnvironment.sh
+
+# Build the library module
+build:
+  - ./gradlew :andorid-autopay-demo-lib:clean
+  - ./gradlew :andorid-autopay-demo-lib:assembleRelease
+
+# Install the AAR file to local Maven repository for JitPack
+install:
+  - FILE="-Dfile=andorid-autopay-demo-lib/build/outputs/aar/andorid-autopay-demo-lib-release.aar"
+  - mvn install:install-file $FILE -DgroupId=com.github.akhilmishra-FE -DartifactId=SDK-Andorid-Testing -Dversion=$TAG_NAME -Dpackaging=aar -DgeneratePom=true
+
