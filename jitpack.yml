@@ -9,9 +9,11 @@ before_install:
 build:
   - ./gradlew :andorid-autopay-demo-lib:clean
   - ./gradlew :andorid-autopay-demo-lib:assembleRelease
+  # Copy AAR to root level for easy access
+  - cp andorid-autopay-demo-lib/build/outputs/aar/andorid-autopay-demo-lib-release.aar ./andorid-autopay-demo-lib-release.aar
 
-# Install the AAR file to local Maven repository for JitPack
+# Install the AAR file from root level to Maven repository for JitPack
 install:
-  - FILE="-Dfile=andorid-autopay-demo-lib/build/outputs/aar/andorid-autopay-demo-lib-release.aar"
+  - FILE="-Dfile=./andorid-autopay-demo-lib-release.aar"
   - mvn install:install-file $FILE -DgroupId=com.github.akhilmishra-FE -DartifactId=SDK-Andorid-Testing -Dversion=$TAG_NAME -Dpackaging=aar -DgeneratePom=true
 

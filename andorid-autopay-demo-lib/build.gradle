@@ -61,23 +61,40 @@ dependencies {
 }
 
 // Maven publishing configuration
-publishing {
-    publications {
-        maven(MavenPublication) {
-            groupId = 'com.github.akhilmishra-FE'
-            artifactId = 'SDK-Andorid-Testing'
-            version = '1.0.0'
-            
-            afterEvaluate {
+afterEvaluate {
+    publishing {
+        publications {
+            maven(MavenPublication) {
+                groupId = 'com.github.akhilmishra-FE'
+                artifactId = 'SDK-Andorid-Testing'
+                version = '1.0.0'
+                
+                // Publish the AAR artifact - this automatically includes AAR and sources JAR
                 from components.release
-            }
-            
-            pom {
-                description = 'UPI AutoPay SDK for Android - A library for integrating UPI AutoPay functionality with merchant applications'
+                
+                pom {
+                    name = 'SDK-Andorid-Testing'
+                    description = 'UPI AutoPay SDK for Android - A library for integrating UPI AutoPay functionality with merchant applications'
+                    url = 'https://github.com/akhilmishra-FE/SDK-Andorid-Testing'
+                    
+                    licenses {
+                        license {
+                            name = 'The Apache License, Version 2.0'
+                            url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                        }
+                    }
+                    
+                    developers {
+                        developer {
+                            id = 'akhilmishra-FE'
+                            name = 'Akhil Mishra'
+                        }
+                    }
+                }
             }
         }
-    }
-    repositories {
-        mavenLocal()
+        repositories {
+            mavenLocal()
+        }
     }
 }
