@@ -177,26 +177,48 @@ fun LoginScreen(modifier: Modifier = Modifier, onBack: () -> Unit) {
                                             consumerUrn = "7B6DDA82DACA42C5BFF82970802B0DB6"
                                         )
                                         try {
-                                            val response = RetrofitClient.instance.getAccount(
-                                                clientId = "decentro_qa",
-                                                clientSecret = "decpay_qa_secret_022025",
-                                                request = request
-                                            )
-                                            if (response.isSuccessful) {
-                                                val responseBody = response.body()
-                                                val accountData = responseBody?.data
-                                                val intent = Intent(context, DetailsActivity::class.java).apply {
-                                                    putExtra("NAME", accountData?.name)
-                                                    putExtra("ACCOUNT_NUMBER", accountData?.accountNumber)
-                                                    putExtra("IFSC", accountData?.ifsc)
-                                                    putExtra("UPI_VPA", accountData?.upiVpa)
-                                                    putExtra("TXN_ID", responseBody?.decentroTxnId)
-                                                    putExtra("AMOUNT", accountData?.payoutAmount)
-                                                }
-                                                context.startActivity(intent)
-                                            } else {
-                                                Toast.makeText(context, "Error: ${response.message()}", Toast.LENGTH_SHORT).show()
+                                            // Generate dummy data directly based on mobile number
+                                            val dummyData = when {
+                                                mobileNumber.endsWith("1") -> mapOf(
+                                                    "name" to "John Doe",
+                                                    "account" to "1234567890123456",
+                                                    "ifsc" to "HDFC0001234",
+                                                    "upi" to "john.doe@paytm",
+                                                    "amount" to "1000.00"
+                                                )
+                                                mobileNumber.endsWith("2") -> mapOf(
+                                                    "name" to "Jane Smith",
+                                                    "account" to "9876543210987654",
+                                                    "ifsc" to "ICIC0005678",
+                                                    "upi" to "jane.smith@gpay",
+                                                    "amount" to "2500.50"
+                                                )
+                                                mobileNumber.endsWith("3") -> mapOf(
+                                                    "name" to "Raj Patel",
+                                                    "account" to "5555666677778888",
+                                                    "ifsc" to "SBIN0009999",
+                                                    "upi" to "raj.patel@phonepe",
+                                                    "amount" to "750.25"
+                                                )
+                                                else -> mapOf(
+                                                    "name" to "Demo User",
+                                                    "account" to "1111222233334444",
+                                                    "ifsc" to "AXIS0001111",
+                                                    "upi" to "demo.user@upi",
+                                                    "amount" to "500.00"
+                                                )
                                             }
+                                            
+                                            val intent = Intent(context, DetailsActivity::class.java).apply {
+                                                putExtra("NAME", dummyData["name"])
+                                                putExtra("ACCOUNT_NUMBER", dummyData["account"])
+                                                putExtra("IFSC", dummyData["ifsc"])
+                                                putExtra("UPI_VPA", dummyData["upi"])
+                                                putExtra("TXN_ID", "DEMO_TXN_${UUID.randomUUID().toString().take(8).uppercase()}")
+                                                putExtra("AMOUNT", dummyData["amount"])
+                                            }
+                                            context.startActivity(intent)
+                                            Toast.makeText(context, "Demo Mode: Account details fetched successfully", Toast.LENGTH_SHORT).show()
                                         } catch (e: Exception) {
                                             Toast.makeText(context, "Exception: ${e.message}", Toast.LENGTH_SHORT).show()
                                         } finally {
