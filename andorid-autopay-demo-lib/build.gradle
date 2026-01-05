@@ -73,7 +73,7 @@ afterEvaluate {
             maven(MavenPublication) {
                 groupId = 'com.github.akhilmishra-FE'
                 artifactId = 'SDK-Andorid-Testing'
-                version = project.findProperty('VERSION_NAME') ?: '1.0.2'
+                version = project.findProperty('VERSION_NAME') ?: '1.1.1' // Updated to v1.1.1
                 
                 // Publish the AAR artifact - this automatically includes AAR and sources JAR
                 from components.release
