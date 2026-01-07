@@ -24,7 +24,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DemoAppScreen() {
     val context = LocalContext.current
-    Surface(
+        Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
@@ -35,13 +35,13 @@ fun DemoAppScreen() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(
+                        Text(
                 text = "UPI AutoPay SDK Demo",
                 style = MaterialTheme.typography.headlineMedium
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            Button(
-                onClick = {
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+                            Button(
+                                onClick = {
                     UPIAutoPaySDK.launchLoginScreen(context)
                 },
                 modifier = Modifier.fillMaxWidth()

@@ -2,6 +2,7 @@ package com.dec.andorid_autopay_demo_lib
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -43,18 +44,88 @@ class LoginActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        // Get pre-filled mobile number if provided
+        val preFillMobile = intent.getStringExtra("MOBILE_NUMBER") ?: ""
+        val merchantPackage = intent.getStringExtra("MERCHANT_PACKAGE")
+        
         setContent {
             UpiautopaysdkTheme {
-                LoginScreen(onBack = { finish() })
+                LoginScreen(
+                    onBack = { finish() },
+                    initialMobileNumber = preFillMobile,
+                    merchantPackage = merchantPackage
+                )
             }
+        }
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        Log.d("LoginActivity", "=== onResume() called ===")
+        android.widget.Toast.makeText(this, "LoginActivity resumed - checking for pending mandate", android.widget.Toast.LENGTH_SHORT).show()
+        
+        // Check for pending mandate status when user returns to main SDK
+        checkForPendingMandateStatus()
+    }
+    
+    // Check if there's a pending mandate to check status for
+    private fun checkForPendingMandateStatus() {
+        Log.d("LoginActivity", "=== Checking for pending mandate status ===")
+        android.widget.Toast.makeText(this, "LoginActivity checking for pending mandate...", android.widget.Toast.LENGTH_SHORT).show()
+        
+        val prefs = getSharedPreferences("UPI_MANDATE_PREFS", MODE_PRIVATE)
+        val pendingMandateId = prefs.getString("PENDING_MANDATE_ID", null)
+        val timestamp = prefs.getLong("MANDATE_TIMESTAMP", 0)
+        
+        Log.d("LoginActivity", "Pending Mandate ID: $pendingMandateId")
+        Log.d("LoginActivity", "Timestamp: $timestamp")
+        
+        if (pendingMandateId != null) {
+            // Check if mandate was created within last 10 minutes
+            val currentTime = System.currentTimeMillis()
+            val timeDiff = currentTime - timestamp
+            val tenMinutesInMillis = 10 * 60 * 1000
+            
+            Log.d("LoginActivity", "Current time: $currentTime")
+            Log.d("LoginActivity", "Time difference: ${timeDiff / 1000} seconds")
+            
+            if (timeDiff < tenMinutesInMillis) {
+                Log.d("LoginActivity", "✅ Found pending mandate, launching status check: $pendingMandateId")
+                android.widget.Toast.makeText(this, "Found pending mandate! Launching status check...", android.widget.Toast.LENGTH_LONG).show()
+                
+                // Clear the stored mandate ID
+                prefs.edit().remove("PENDING_MANDATE_ID").remove("MANDATE_TIMESTAMP").apply()
+                
+                // Launch status activity
+                val statusIntent = Intent(this, MandateStatusActivity::class.java).apply {
+                    putExtra("MANDATE_ID", pendingMandateId)
+                    intent.getStringExtra("MERCHANT_PACKAGE")?.let {
+                        putExtra("MERCHANT_PACKAGE", it)
+                    }
+                }
+                startActivity(statusIntent)
+            } else {
+                Log.d("LoginActivity", "❌ Pending mandate too old (${timeDiff / 1000}s), ignoring")
+                android.widget.Toast.makeText(this, "Pending mandate too old, ignoring", android.widget.Toast.LENGTH_SHORT).show()
+                prefs.edit().remove("PENDING_MANDATE_ID").remove("MANDATE_TIMESTAMP").apply()
+            }
+        } else {
+            Log.d("LoginActivity", "❌ No pending mandate found")
+            android.widget.Toast.makeText(this, "No pending mandate found", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LoginScreen(modifier: Modifier = Modifier, onBack: () -> Unit) {
-    var mobileNumber by remember { mutableStateOf("") }
+fun LoginScreen(
+    modifier: Modifier = Modifier, 
+    onBack: () -> Unit,
+    initialMobileNumber: String = "",
+    merchantPackage: String? = null
+) {
+    var mobileNumber by remember { mutableStateOf(initialMobileNumber) }
     var isLoading by remember { mutableStateOf(false) }
     var consentChecked by remember { mutableStateOf(false) }
     var animate by remember { mutableStateOf(false) }
@@ -216,6 +287,8 @@ fun LoginScreen(modifier: Modifier = Modifier, onBack: () -> Unit) {
                                                 putExtra("UPI_VPA", dummyData["upi"])
                                                 putExtra("TXN_ID", "DEMO_TXN_${UUID.randomUUID().toString().take(8).uppercase()}")
                                                 putExtra("AMOUNT", dummyData["amount"])
+                                                // Pass merchant package for return navigation
+                                                merchantPackage?.let { putExtra("MERCHANT_PACKAGE", it) }
                                             }
                                             context.startActivity(intent)
                                             Toast.makeText(context, "Demo Mode: Account details fetched successfully", Toast.LENGTH_SHORT).show()
