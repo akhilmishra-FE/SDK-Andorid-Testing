@@ -1,8 +1,15 @@
 package com.dec.andorid_autopay_demo_lib
 
+import android.app.Activity
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,8 +21,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.outlined.Wallet
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -37,28 +45,276 @@ val CardBackground = Color(0xFFFFFFFF)
 val LightGrayBackground = Color(0xFFF7F7F7)
 
 class DetailsActivity : ComponentActivity() {
+    
+    private lateinit var currentName: String
+    private lateinit var currentAccountNumber: String
+    private lateinit var currentIfsc: String
+    private lateinit var currentUpiVpa: String
+    private lateinit var currentTxnId: String
+    private lateinit var currentAmount: String
+    private var merchantPackage: String? = null
+    
+    private val editAccountLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.let { data ->
+                // Update current values
+                currentName = data.getStringExtra("NAME") ?: currentName
+                currentAccountNumber = data.getStringExtra("ACCOUNT_NUMBER") ?: currentAccountNumber
+                currentIfsc = data.getStringExtra("IFSC") ?: currentIfsc
+                currentUpiVpa = data.getStringExtra("UPI_VPA") ?: currentUpiVpa
+                currentTxnId = data.getStringExtra("TXN_ID") ?: currentTxnId
+                currentAmount = data.getStringExtra("AMOUNT") ?: currentAmount
+                
+                // Update the intent extras for future use
+                intent.putExtra("NAME", currentName)
+                intent.putExtra("ACCOUNT_NUMBER", currentAccountNumber)
+                intent.putExtra("IFSC", currentIfsc)
+                intent.putExtra("UPI_VPA", currentUpiVpa)
+                intent.putExtra("TXN_ID", currentTxnId)
+                intent.putExtra("AMOUNT", currentAmount)
+                
+                // Recreate activity to show updated data
+                recreate()
+            }
+        }
+    }
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val name = intent.getStringExtra("NAME")
-        val accountNumber = intent.getStringExtra("ACCOUNT_NUMBER")
-        val ifsc = intent.getStringExtra("IFSC")
-        val upiVpa = intent.getStringExtra("UPI_VPA")
-        val txnId = intent.getStringExtra("TXN_ID")
-        val amount = intent.getStringExtra("AMOUNT")
+        
+        // Initialize current values
+        currentName = intent.getStringExtra("NAME") ?: ""
+        currentAccountNumber = intent.getStringExtra("ACCOUNT_NUMBER") ?: ""
+        currentIfsc = intent.getStringExtra("IFSC") ?: ""
+        currentUpiVpa = intent.getStringExtra("UPI_VPA") ?: ""
+        currentTxnId = intent.getStringExtra("TXN_ID") ?: ""
+        currentAmount = intent.getStringExtra("AMOUNT") ?: ""
+        merchantPackage = intent.getStringExtra("MERCHANT_PACKAGE")
 
         setContent {
             UpiautopaysdkTheme {
                 DetailsScreen(
-                    name = name,
-                    accountNumber = accountNumber,
-                    ifsc = ifsc,
-                    upiVpa = upiVpa,
-                    txnId = txnId,
-                    amount = amount,
-                    onBack = { finish() }
+                    name = currentName,
+                    accountNumber = currentAccountNumber,
+                    ifsc = currentIfsc,
+                    upiVpa = currentUpiVpa,
+                    txnId = currentTxnId,
+                    amount = currentAmount,
+                    onBack = { finish() },
+                    onEdit = { openEditScreen() },
+                    onPayViaCred = { launchUPIMandateFlow() }
                 )
             }
         }
+    }
+    
+    private fun openEditScreen() {
+        val intent = Intent(this, EditAccountActivity::class.java).apply {
+            putExtra("NAME", currentName)
+            putExtra("ACCOUNT_NUMBER", currentAccountNumber)
+            putExtra("IFSC", currentIfsc)
+            putExtra("UPI_VPA", currentUpiVpa)
+            putExtra("TXN_ID", currentTxnId)
+            putExtra("AMOUNT", currentAmount)
+        }
+        editAccountLauncher.launch(intent)
+    }
+    
+    private fun launchUPIMandateFlow() {
+        val mandateService = MandateStatusService()
+        val deepLink = mandateService.generateMandateDeepLink()
+        val mandateId = mandateService.generateMandateId()
+        
+        Log.d("DetailsActivity", "Deep Link: $deepLink")
+        Log.d("DetailsActivity", "Mandate ID: $mandateId")
+        
+        try {
+            // Since the deep link works when opened directly, let's just launch it
+            val uri = Uri.parse(deepLink)
+            Log.d("DetailsActivity", "Parsed URI: $uri")
+            
+            // Create intent for UPI mandate
+            val upiIntent = Intent(Intent.ACTION_VIEW).apply {
+                data = uri
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            
+            Log.d("DetailsActivity", "Attempting to launch UPI intent directly...")
+            
+            // Try direct launch first (since you confirmed the link works)
+            try {
+                startActivity(upiIntent)
+                Log.d("DetailsActivity", "Successfully launched UPI intent directly")
+                
+                // Show success toast
+                android.widget.Toast.makeText(
+                    this, 
+                    "UPI app launched. Complete the mandate and return.", 
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+                
+                // Store mandate ID for later use when user returns
+                storeMandateIdForStatusCheck(mandateId)
+                
+                // DO NOT start status checking immediately
+                // Wait for user to return to app manually
+                
+            } catch (directLaunchException: Exception) {
+                Log.w("DetailsActivity", "Direct launch failed, trying with chooser", directLaunchException)
+                
+                // If direct launch fails, try with chooser
+                try {
+                    val chooser = Intent.createChooser(upiIntent, "Complete UPI Mandate")
+                    startActivity(chooser)
+                    Log.d("DetailsActivity", "Successfully launched UPI chooser")
+                    
+                    android.widget.Toast.makeText(
+                        this, 
+                        "Select your UPI app to complete the mandate.", 
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    
+                    // Store mandate ID for later use when user returns
+                    storeMandateIdForStatusCheck(mandateId)
+                    
+                    // DO NOT start status checking immediately
+                    // Wait for user to return to app manually
+                    
+                } catch (chooserException: Exception) {
+                    Log.e("DetailsActivity", "Chooser launch also failed", chooserException)
+                    
+                    // Last resort: Show error but provide manual option
+                    android.widget.Toast.makeText(
+                        this, 
+                        "Unable to launch UPI app automatically. Please open your UPI app manually and use this link: $deepLink", 
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                    
+                    // Try to copy link to clipboard for manual use
+                    try {
+                        val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("UPI Mandate Link", deepLink)
+                        clipboard.setPrimaryClip(clip)
+                        
+                        android.widget.Toast.makeText(
+                            this, 
+                            "UPI link copied to clipboard. Paste it in your browser or UPI app.", 
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    } catch (clipboardException: Exception) {
+                        Log.e("DetailsActivity", "Failed to copy to clipboard", clipboardException)
+                    }
+                }
+            }
+            
+        } catch (e: Exception) {
+            Log.e("DetailsActivity", "Complete failure in UPI launch", e)
+            android.widget.Toast.makeText(
+                this, 
+                "Error: ${e.message}. Please try opening your UPI app manually.", 
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+    
+    // Store mandate ID in SharedPreferences for later use
+    private fun storeMandateIdForStatusCheck(mandateId: String) {
+        val prefs = getSharedPreferences("UPI_MANDATE_PREFS", MODE_PRIVATE)
+        val timestamp = System.currentTimeMillis()
+        
+        prefs.edit().apply {
+            putString("PENDING_MANDATE_ID", mandateId)
+            putLong("MANDATE_TIMESTAMP", timestamp)
+            apply()
+        }
+        
+        Log.d("DetailsActivity", "💾 === STORED MANDATE FOR LATER ===")
+        Log.d("DetailsActivity", "💾 Mandate ID: $mandateId")
+        Log.d("DetailsActivity", "💾 Timestamp: $timestamp")
+        
+        android.widget.Toast.makeText(this, "Mandate stored! Complete payment and return to app", android.widget.Toast.LENGTH_LONG).show()
+    }
+    
+    // Check if there's a pending mandate to check status for
+    private fun checkForPendingMandateStatus() {
+        Log.d("DetailsActivity", "=== Checking for pending mandate status ===")
+        android.widget.Toast.makeText(this, "Checking for pending mandate...", android.widget.Toast.LENGTH_SHORT).show()
+        
+        val prefs = getSharedPreferences("UPI_MANDATE_PREFS", MODE_PRIVATE)
+        val pendingMandateId = prefs.getString("PENDING_MANDATE_ID", null)
+        val timestamp = prefs.getLong("MANDATE_TIMESTAMP", 0)
+        
+        Log.d("DetailsActivity", "Pending Mandate ID: $pendingMandateId")
+        Log.d("DetailsActivity", "Timestamp: $timestamp")
+        
+        if (pendingMandateId != null) {
+            // Check if mandate was created within last 10 minutes (reasonable time window)
+            val currentTime = System.currentTimeMillis()
+            val timeDiff = currentTime - timestamp
+            val tenMinutesInMillis = 10 * 60 * 1000
+            
+            Log.d("DetailsActivity", "Current time: $currentTime")
+            Log.d("DetailsActivity", "Time difference: ${timeDiff / 1000} seconds")
+            
+            if (timeDiff < tenMinutesInMillis) {
+                Log.d("DetailsActivity", "✅ Found pending mandate, launching status check: $pendingMandateId")
+                android.widget.Toast.makeText(this, "Found pending mandate! Launching status check...", android.widget.Toast.LENGTH_LONG).show()
+                
+                // Clear the stored mandate ID
+                prefs.edit().remove("PENDING_MANDATE_ID").remove("MANDATE_TIMESTAMP").apply()
+                
+                // Launch status activity
+                launchStatusActivity(pendingMandateId)
+            } else {
+                Log.d("DetailsActivity", "❌ Pending mandate too old (${timeDiff / 1000}s), ignoring")
+                android.widget.Toast.makeText(this, "Pending mandate too old, ignoring", android.widget.Toast.LENGTH_SHORT).show()
+                prefs.edit().remove("PENDING_MANDATE_ID").remove("MANDATE_TIMESTAMP").apply()
+            }
+        } else {
+            Log.d("DetailsActivity", "❌ No pending mandate found")
+            android.widget.Toast.makeText(this, "No pending mandate found", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    // Launch status activity
+    private fun launchStatusActivity(mandateId: String) {
+        val statusIntent = Intent(this, MandateStatusActivity::class.java).apply {
+            putExtra("MANDATE_ID", mandateId)
+            // Pass merchant package name if available
+            merchantPackage?.let {
+                putExtra("MERCHANT_PACKAGE", it)
+            }
+        }
+        startActivity(statusIntent)
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        Log.d("DetailsActivity", "=== onResume() called ===")
+        android.widget.Toast.makeText(this, "DetailsActivity resumed - checking for pending mandate", android.widget.Toast.LENGTH_SHORT).show()
+        
+        // Check for pending mandate status when user returns to this activity
+        checkForPendingMandateStatus()
+    }
+    
+    // Debug function to check all installed apps
+    private fun debugInstalledApps() {
+        val packageManager = packageManager
+        val installedApps = packageManager.getInstalledApplications(0)
+        
+        Log.d("DetailsActivity", "=== ALL INSTALLED APPS ===")
+        installedApps.forEach { app ->
+            if (app.packageName.contains("pay", ignoreCase = true) || 
+                app.packageName.contains("upi", ignoreCase = true) ||
+                app.packageName.contains("phonepe", ignoreCase = true) ||
+                app.packageName.contains("paytm", ignoreCase = true) ||
+                app.packageName.contains("google", ignoreCase = true)) {
+                Log.d("DetailsActivity", "Potential UPI app: ${app.packageName}")
+            }
+        }
+        Log.d("DetailsActivity", "=== END INSTALLED APPS ===")
     }
 }
 
@@ -72,7 +328,9 @@ fun DetailsScreen(
     txnId: String?,
     amount: String?,
     modifier: Modifier = Modifier,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onEdit: () -> Unit = {},
+    onPayViaCred: () -> Unit = {}
 ) {
     Scaffold(
         modifier = modifier
@@ -103,9 +361,16 @@ fun DetailsScreen(
         ) {
             MerchantDetailsCard(txnId, amount)
             Spacer(modifier = Modifier.height(24.dp))
-            AccountDetailsCard(name, accountNumber, ifsc, upiVpa)
+            AccountDetailsCard(
+                name = name,
+                accountNumber = accountNumber,
+                ifsc = ifsc,
+                upiVpa = upiVpa,
+                onEdit = onEdit,
+                onPayViaCred = onPayViaCred
+            )
             Spacer(modifier = Modifier.height(24.dp))
-            PayViaOtherAppCard()
+            PayViaOtherAppCard(onPayViaOtherApp = onPayViaCred)
             Spacer(modifier = Modifier.weight(1f))
             TrustedAndSecurePayments()
             Spacer(modifier = Modifier.height(24.dp))
@@ -144,7 +409,14 @@ fun MerchantDetailsCard(txnId: String?, amount: String?) {
 }
 
 @Composable
-fun AccountDetailsCard(name: String?, accountNumber: String?, ifsc: String?, upiVpa: String?) {
+fun AccountDetailsCard(
+    name: String?, 
+    accountNumber: String?, 
+    ifsc: String?, 
+    upiVpa: String?,
+    onEdit: () -> Unit = {},
+    onPayViaCred: () -> Unit = {}
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -168,7 +440,7 @@ fun AccountDetailsCard(name: String?, accountNumber: String?, ifsc: String?, upi
                         )
                 ) {
                     Button(
-                        onClick = { /*TODO*/ },
+                        onClick = onEdit,
                         shape = RoundedCornerShape(50),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
                         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)
@@ -188,7 +460,7 @@ fun AccountDetailsCard(name: String?, accountNumber: String?, ifsc: String?, upi
 
             // --- PAY VIA CRED BUTTON ---
             Button(
-                onClick = { /*TODO*/ },
+                onClick = onPayViaCred,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
@@ -209,7 +481,7 @@ fun AccountDetailsCard(name: String?, accountNumber: String?, ifsc: String?, upi
 }
 
 @Composable
-fun PayViaOtherAppCard() {
+fun PayViaOtherAppCard(onPayViaOtherApp: () -> Unit = {}) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -219,7 +491,7 @@ fun PayViaOtherAppCard() {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { /* TODO */ }
+                .clickable { onPayViaOtherApp() }
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -268,7 +540,9 @@ fun DetailsScreenPreview() {
             upiVpa = "vidhiaggarwal@yescred",
             txnId = "98789723754642342764723423",
             amount = "101.11",
-            onBack = {}
+            onBack = {},
+            onEdit = {},
+            onPayViaCred = {}
         )
     }
 }
