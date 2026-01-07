@@ -73,7 +73,7 @@ afterEvaluate {
             maven(MavenPublication) {
                 groupId = 'com.github.akhilmishra-FE'
                 artifactId = 'SDK-Andorid-Testing'
-                version = project.findProperty('VERSION_NAME') ?: '1.2.5' // Enhanced redirect with multiple fallback approaches
+                version = project.findProperty('VERSION_NAME') ?: '1.2.7' // Redirect to merchant app ONLY for SUCCESS and FAILED statuses
                 
                 // Publish the AAR artifact - this automatically includes AAR and sources JAR
                 from components.release

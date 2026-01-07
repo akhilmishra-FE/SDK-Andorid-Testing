@@ -308,8 +308,8 @@ fun MandateStatusScreen(
             }
         }
         
-        // Auto-redirect to merchant app after 5 seconds on ANY final status
-        // Always ensure we redirect to merchant app regardless of status
+        // IMPORTANT: Auto-redirect to merchant app ONLY for SUCCESS and FAILED statuses
+        // PENDING/PROCESSING statuses will keep SDK open for user interaction
         Log.d("MandateStatusScreen", "🎯 ========================================")
         Log.d("MandateStatusScreen", "🎯 === FINAL STATUS REACHED ===")
         Log.d("MandateStatusScreen", "🎯 ========================================")
@@ -317,30 +317,38 @@ fun MandateStatusScreen(
         Log.d("MandateStatusScreen", "🎯 Status Response: $statusResponse")
         Log.d("MandateStatusScreen", "🎯 Timer Start: ${System.currentTimeMillis()}")
         
-        if (currentStatus == MandateStatus.SUCCESS || currentStatus == MandateStatus.FAILED) {
-            Log.d("MandateStatusScreen", "✅ Normal completion - SUCCESS or FAILED status")
-            Log.d("MandateStatusScreen", "✅ Will display status screen for exactly 5 seconds")
-        } else {
-            Log.w("MandateStatusScreen", "⚠️ Unexpected status: $currentStatus - but still redirecting to merchant app")
-        }
-        
         Log.d("MandateStatusScreen", "📊 === STATUS CHECK COMPLETED ===")
         Log.d("MandateStatusScreen", "📊 Final Status: $currentStatus")
-        Log.d("MandateStatusScreen", "📊 Starting 5-second display timer...")
         
-        // Show status for 5 seconds, then redirect to client app
-        Log.d("MandateStatusScreen", "⏳ === STARTING 5-SECOND DISPLAY ===")
-        Log.d("MandateStatusScreen", "⏳ User will see status screen for 5 seconds...")
-        Log.d("MandateStatusScreen", "⏳ Display start time: ${System.currentTimeMillis()}")
-        
-        delay(5000) // Show status for exactly 5 seconds
-        
-        Log.d("MandateStatusScreen", "✅ === 5-SECOND DISPLAY COMPLETED ===")
-        Log.d("MandateStatusScreen", "✅ Display end time: ${System.currentTimeMillis()}")
-        Log.d("MandateStatusScreen", "✅ Now redirecting to client app...")
-        
-        // Redirect to client app
-        onComplete()
+        // Only redirect for SUCCESS and FAILED statuses
+        if (currentStatus == MandateStatus.SUCCESS || currentStatus == MandateStatus.FAILED) {
+            Log.d("MandateStatusScreen", "✅ === FINAL STATUS - REDIRECT TO MERCHANT APP ===")
+            Log.d("MandateStatusScreen", "✅ Status: $currentStatus")
+            Log.d("MandateStatusScreen", "✅ Will display status screen for exactly 5 seconds")
+            Log.d("MandateStatusScreen", "✅ Then redirect to merchant app")
+            
+            // Show status for 5 seconds, then redirect to client app
+            Log.d("MandateStatusScreen", "⏳ === STARTING 5-SECOND DISPLAY ===")
+            Log.d("MandateStatusScreen", "⏳ User will see status screen for 5 seconds...")
+            Log.d("MandateStatusScreen", "⏳ Display start time: ${System.currentTimeMillis()}")
+            
+            delay(5000) // Show status for exactly 5 seconds
+            
+            Log.d("MandateStatusScreen", "✅ === 5-SECOND DISPLAY COMPLETED ===")
+            Log.d("MandateStatusScreen", "✅ Display end time: ${System.currentTimeMillis()}")
+            Log.d("MandateStatusScreen", "✅ Now redirecting to merchant app...")
+            
+            // Redirect to merchant app
+            onComplete()
+        } else {
+            Log.d("MandateStatusScreen", "⏳ === INTERMEDIATE STATUS - STAY IN SDK ===")
+            Log.d("MandateStatusScreen", "⏳ Status: $currentStatus")
+            Log.d("MandateStatusScreen", "⏳ SDK will stay open - no redirect")
+            Log.d("MandateStatusScreen", "⏳ User can manually close or wait for status updates")
+            
+            // For PENDING/PROCESSING - SDK stays open, no redirect
+            // User can manually close or the status will update
+        }
     }
     
     Box(
