@@ -73,7 +73,7 @@ afterEvaluate {
             maven(MavenPublication) {
                 groupId = 'com.github.akhilmishra-FE'
                 artifactId = 'SDK-Andorid-Testing'
-                version = project.findProperty('VERSION_NAME') ?: '1.1.9' // Fixed API timeout: Increased timeouts + retry logic + demo fallback
+                version = project.findProperty('VERSION_NAME') ?: '1.2.0' // Fixed compilation error + API timeout fixes
                 
                 // Publish the AAR artifact - this automatically includes AAR and sources JAR
                 from components.release
