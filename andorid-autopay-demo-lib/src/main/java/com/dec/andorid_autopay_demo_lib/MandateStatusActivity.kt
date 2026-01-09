@@ -1,5 +1,6 @@
 package com.dec.andorid_autopay_demo_lib
 
+import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
@@ -78,89 +79,60 @@ class MandateStatusActivity : ComponentActivity() {
                         Log.d(TAG, "   📦 Merchant Package: $merchantPackage")
                         Log.d(TAG, "   🕐 Completion Time: ${System.currentTimeMillis()}")
                         
-                        // Try multiple redirect approaches
-                        var redirectSuccessful = false
-                        
-                        // Approach 1: Launch specific merchant app
-                        if (merchantPackage != null && !redirectSuccessful) {
-                            try {
-                                Log.d(TAG, "🚀 === APPROACH 1: LAUNCHING MERCHANT APP ===")
-                                Log.d(TAG, "🚀 Attempting to launch: $merchantPackage")
-                                
-                                val merchantIntent = packageManager.getLaunchIntentForPackage(merchantPackage)
-                                if (merchantIntent != null) {
-                                    merchantIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                                    Log.d(TAG, "🚀 Merchant intent created successfully")
-                                    Log.d(TAG, "🚀 Intent flags: NEW_TASK | CLEAR_TOP")
-                                    startActivity(merchantIntent)
-                                    Log.d(TAG, "✅ Merchant app launched successfully")
-                                    redirectSuccessful = true
-                                } else {
-                                    Log.e(TAG, "❌ Merchant app not found in package manager")
-                                    Log.e(TAG, "❌ Package: $merchantPackage")
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "💥 Error launching merchant app: ${e.message}")
-                            }
-                        }
-                        
-                        // Approach 2: Try to go back to previous app using task stack
-                        if (!redirectSuccessful) {
-                            try {
-                                Log.d(TAG, "🔄 === APPROACH 2: USING TASK STACK ===")
-                                moveTaskToBack(true)
-                                Log.d(TAG, "✅ Moved task to back - should show previous app")
-                                redirectSuccessful = true
-                            } catch (e: Exception) {
-                                Log.e(TAG, "💥 Error moving task to back: ${e.message}")
-                            }
-                        }
-                        
-                        // Approach 3: Launch home screen as final fallback
-                        if (!redirectSuccessful) {
-                            try {
-                                Log.d(TAG, "🏠 === APPROACH 3: LAUNCHING HOME SCREEN ===")
-                                val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                                    addCategory(Intent.CATEGORY_HOME)
-                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                }
-                                startActivity(homeIntent)
-                                Log.d(TAG, "✅ Home screen launched successfully")
-                                redirectSuccessful = true
-                            } catch (e: Exception) {
-                                Log.e(TAG, "💥 Error launching home screen: ${e.message}")
-                            }
-                        }
-                        
-                        Log.d(TAG, "📊 === REDIRECT SUMMARY ===")
-                        Log.d(TAG, "📊 Merchant Package: $merchantPackage")
-                        Log.d(TAG, "📊 Redirect Successful: $redirectSuccessful")
-                        Log.d(TAG, "📊 Final Status: ${if (redirectSuccessful) "SUCCESS" else "FAILED"}")
-                        
-                        // GUARANTEED SDK CLOSURE: Always close SDK regardless of merchant app launch result
-                        Log.d(TAG, "🏁 === CLOSING SDK (GUARANTEED) ===")
-                        Log.d(TAG, "🏁 Calling finishAffinity() to close all SDK activities")
-                        Log.d(TAG, "🏁 Final timestamp: ${System.currentTimeMillis()}")
-                        
-                        try {
-                            finishAffinity()
-                            Log.d(TAG, "✅ SDK closed successfully")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "💥 Error closing SDK: ${e.message}")
-                            // Force close with finish() as fallback
-                            try {
-                                finish()
-                                Log.d(TAG, "✅ SDK closed with fallback finish()")
-                            } catch (e2: Exception) {
-                                Log.e(TAG, "💥 Critical: Cannot close SDK: ${e2.message}")
-                            }
-                        }
-                        
-                        Log.d(TAG, "🏁 === SDK CLOSURE COMPLETED ===")
+                        // This callback will be triggered from the LaunchedEffect
+                        // The actual result handling is done there
                     }
                 )
             }
         }
+    }
+    
+    /**
+     * Returns success result to the original calling app (not just DetailsActivity)
+     */
+    fun returnSuccessResult(response: MandateStatusResponse?) {
+        Log.d(TAG, "✅ === RETURNING SUCCESS RESULT TO MAIN APP ===")
+        Log.d(TAG, "✅ Mandate Status: ${response?.mandate_status}")
+        Log.d(TAG, "✅ Message: ${response?.message}")
+        
+        val resultIntent = Intent().apply {
+            putExtra("MANDATE_STATUS", response?.mandate_status ?: "SUCCESS")
+            putExtra("DECENTRO_MANDATE_ID", response?.decentro_mandate_id ?: "")
+            putExtra("MESSAGE", response?.message ?: "Payment completed successfully")
+            putExtra("TIMESTAMP", System.currentTimeMillis())
+        }
+        
+        // Set result and finish this activity
+        setResult(RESULT_OK, resultIntent)
+        Log.d(TAG, "✅ Result set to RESULT_OK")
+        
+        // Close all SDK activities and return to main app
+        finishAffinity()
+        Log.d(TAG, "✅ All SDK activities closed - returned to main app")
+    }
+    
+    /**
+     * Returns error result to the original calling app (not just DetailsActivity)
+     */
+    fun returnErrorResult(response: MandateStatusResponse?) {
+        Log.d(TAG, "❌ === RETURNING ERROR RESULT TO MAIN APP ===")
+        Log.d(TAG, "❌ Mandate Status: ${response?.mandate_status}")
+        Log.d(TAG, "❌ Message: ${response?.message}")
+        
+        val resultIntent = Intent().apply {
+            putExtra("MANDATE_STATUS", response?.mandate_status ?: "FAILED")
+            putExtra("DECENTRO_MANDATE_ID", response?.decentro_mandate_id ?: "")
+            putExtra("ERROR_MESSAGE", response?.message ?: "Payment failed")
+            putExtra("TIMESTAMP", System.currentTimeMillis())
+        }
+        
+        // Set result and finish this activity
+        setResult(RESULT_CANCELED, resultIntent)
+        Log.d(TAG, "❌ Result set to RESULT_CANCELED")
+        
+        // Close all SDK activities and return to main app
+        finishAffinity()
+        Log.d(TAG, "❌ All SDK activities closed - returned to main app")
     }
 }
 
@@ -172,66 +144,26 @@ fun MandateStatusScreen(
     var currentStatus by remember { mutableStateOf(MandateStatus.PROCESSING) }
     var statusResponse by remember { mutableStateOf<MandateStatusResponse?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val activity = context as MandateStatusActivity
     val mandateService = remember { MandateStatusService(context) }
     
-    // Auto-check status and close after final status
-    // GUARANTEED TIMEOUT: Always redirect within 30 seconds maximum
     LaunchedEffect(mandateId) {
-        // REMOVED: Auto-close timeout - app will NOT close automatically
-        // User must see the status screen and it will only close after 5-second display
-        // No timeout job - let the normal flow complete naturally
-        Log.d("MandateStatusScreen", "🔄 ========================================")
-        Log.d("MandateStatusScreen", "🔄 === STATUS CHECK LAUNCHED EFFECT ===")
-        Log.d("MandateStatusScreen", "🔄 ========================================")
-        Log.d("MandateStatusScreen", "🔄 LaunchedEffect Details:")
-        Log.d("MandateStatusScreen", "   📋 Mandate ID: $mandateId")
-        Log.d("MandateStatusScreen", "   🕐 Start Time: ${System.currentTimeMillis()}")
-        
-        // Show processing immediately, then check status IMMEDIATELY
-        Log.d("MandateStatusScreen", "⏳ === STARTING STATUS CHECK FLOW ===")
-        Log.d("MandateStatusScreen", "⏳ NO DELAY - Starting API call immediately")
-        Log.d("MandateStatusScreen", "⏳ Start time: ${System.currentTimeMillis()}")
-        // NO DELAY - Start API call immediately when user returns
-        
-        // First API call - immediate status check
-        Log.d("MandateStatusScreen", "🚀 ========================================")
-        Log.d("MandateStatusScreen", "🚀 === FIRST API CALL STARTING ===")
-        Log.d("MandateStatusScreen", "🚀 ========================================")
-        Log.d("MandateStatusScreen", "🚀 Mandate ID: $mandateId")
-        Log.d("MandateStatusScreen", "🚀 Call time: ${System.currentTimeMillis()}")
+        Log.d("MandateStatusScreen", "Starting status check for mandate: $mandateId")
         Log.d("MandateStatusScreen", "🚀 Calling mandateService.checkMandateStatus()...")
         
         val startTime = System.currentTimeMillis()
         val response = mandateService.checkMandateStatus(mandateId)
         val endTime = System.currentTimeMillis()
         
-        Log.d("MandateStatusScreen", "📡 ========================================")
-        Log.d("MandateStatusScreen", "📡 === FIRST API CALL COMPLETED ===")
-        Log.d("MandateStatusScreen", "📡 ========================================")
-        Log.d("MandateStatusScreen", "📡 API call duration: ${endTime - startTime}ms")
+        Log.d("MandateStatusScreen", "API call completed in ${endTime - startTime}ms")
         statusResponse = response
-        
-        Log.d("MandateStatusScreen", "📡 === FIRST API RESPONSE ===")
-        Log.d("MandateStatusScreen", "📡 Response: $response")
-        Log.d("MandateStatusScreen", "📡 Status: ${response.mandate_status}")
+        Log.d("MandateStatusScreen", "Status: ${response.mandate_status}")
         
         currentStatus = when(response.mandate_status.uppercase()) {
-            "SUCCESS", "COMPLETED" -> {
-                Log.d("MandateStatusScreen", "✅ Status mapped to SUCCESS")
-                MandateStatus.SUCCESS
-            }
-            "FAILED", "FAILURE", "ERROR" -> {
-                Log.d("MandateStatusScreen", "❌ Status mapped to FAILED")
-                MandateStatus.FAILED
-            }
-            "PENDING", "INITIATED" -> {
-                Log.d("MandateStatusScreen", "⏳ Status mapped to PENDING")
-                MandateStatus.PENDING
-            }
-            else -> {
-                Log.d("MandateStatusScreen", "🔄 Status mapped to PROCESSING (default)")
-                MandateStatus.PROCESSING
-            }
+            "SUCCESS", "COMPLETED" -> MandateStatus.SUCCESS
+            "FAILED", "FAILURE", "ERROR" -> MandateStatus.FAILED
+            "PENDING", "INITIATED" -> MandateStatus.PENDING
+            else -> MandateStatus.PROCESSING
         }
         
         Log.d("MandateStatusScreen", "📊 Current Status after first check: $currentStatus")
@@ -336,10 +268,18 @@ fun MandateStatusScreen(
             
             Log.d("MandateStatusScreen", "✅ === 5-SECOND DISPLAY COMPLETED ===")
             Log.d("MandateStatusScreen", "✅ Display end time: ${System.currentTimeMillis()}")
-            Log.d("MandateStatusScreen", "✅ Now redirecting to merchant app...")
+            Log.d("MandateStatusScreen", "✅ Now returning result to calling app...")
             
-            // Redirect to merchant app
-            onComplete()
+            // PROPER ANDROID WAY: Return result to calling app
+            Log.d("MandateStatusScreen", "🏁 === RETURNING RESULT TO CALLING APP ===")
+            Log.d("MandateStatusScreen", "🏁 Status: $currentStatus")
+            Log.d("MandateStatusScreen", "🏁 Response: $statusResponse")
+            
+            if (currentStatus == MandateStatus.SUCCESS) {
+                activity.returnSuccessResult(statusResponse)
+            } else {
+                activity.returnErrorResult(statusResponse)
+            }
         } else {
             Log.d("MandateStatusScreen", "⏳ === INTERMEDIATE STATUS - STAY IN SDK ===")
             Log.d("MandateStatusScreen", "⏳ Status: $currentStatus")

@@ -32,8 +32,6 @@ class MandateStatusService(private val context: Context? = null) {
 
     companion object {
         private const val TAG = "MandateStatusService"
-        // Control flag to easily switch between real and dummy flows
-        private const val USE_REAL_API = true
     }
 
     /**
@@ -153,30 +151,11 @@ class MandateStatusService(private val context: Context? = null) {
     }
 
     /**
-     * Simulates an API call and returns dummy data. Useful for testing and as a fallback.
-     */
-    private suspend fun checkMandateStatusDummy(decentroMandateId: String): MandateStatusResponse {
-        Log.d(TAG, "🎭 [Dummy Flow] Using DUMMY API.")
-        delay(2000) // Simulate network latency
-        return MandateStatusResponse(
-            mandate_status = MandateStatus.SUCCESS.toString(),
-            decentro_mandate_id = decentroMandateId,
-            message = "Mandate status checked successfully (Dummy Data)"
-        )
-    }
-
-    /**
-     * Checks mandate status by calling the real Decentro API with a robust retry strategy.
+     * Check mandate status via API
      */
     @RequiresPermission(Manifest.permission.ACCESS_NETWORK_STATE)
     suspend fun checkMandateStatus(decentroMandateId: String): MandateStatusResponse {
-        Log.i(TAG, "🔍 === CHECKING MANDATE STATUS for ID: $decentroMandateId ===")
-        return if (USE_REAL_API) {
-            Log.d(TAG, "🌐 [Real Flow] Starting...")
-            checkMandateStatusReal(decentroMandateId)
-        } else {
-            checkMandateStatusDummy(decentroMandateId)
-        }
+        return checkMandateStatusReal(decentroMandateId)
     }
 
     /**

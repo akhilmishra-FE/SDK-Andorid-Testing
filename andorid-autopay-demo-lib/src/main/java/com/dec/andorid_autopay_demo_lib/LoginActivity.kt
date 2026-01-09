@@ -39,8 +39,36 @@ import com.dec.andorid_autopay_demo_lib.ui.theme.ButtonGradientStart
 import com.dec.andorid_autopay_demo_lib.ui.theme.UpiautopaysdkTheme
 import kotlinx.coroutines.launch
 import java.util.UUID
+import com.google.gson.annotations.SerializedName
+
+// Data classes for account API
+data class AccountRequest(
+    @SerializedName("reference_id") val referenceId: String,
+    @SerializedName("mobile_number") val mobileNumber: String,
+    @SerializedName("is_consent_granted") val isConsentGranted: Boolean,
+    @SerializedName("fetch_branch_details") val fetchBranchDetails: Boolean,
+    @SerializedName("consumer_urn") val consumerUrn: String
+)
+
+data class AccountResponse(
+    @SerializedName("decentro_txn_id") val decentroTxnId: String,
+    @SerializedName("api_status") val status: String,
+    val message: String,
+    val data: AccountData?,
+    @SerializedName("response_key") val responseKey: String
+)
+
+data class AccountData(
+    @SerializedName("name_as_per_bank") val name: String,
+    @SerializedName("account_number") val accountNumber: String,
+    val ifsc: String,
+    @SerializedName("upi_vpa") val upiVpa: String,
+    @SerializedName("payout_amount") val payoutAmount: String?
+)
 
 class LoginActivity : ComponentActivity() {
+    
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -63,7 +91,7 @@ class LoginActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         Log.d("LoginActivity", "=== onResume() called ===")
-        android.widget.Toast.makeText(this, "LoginActivity resumed - checking for pending mandate", android.widget.Toast.LENGTH_SHORT).show()
+   
         
         // Check for pending mandate status when user returns to main SDK
         checkForPendingMandateStatus()
@@ -72,7 +100,7 @@ class LoginActivity : ComponentActivity() {
     // Check if there's a pending mandate to check status for
     private fun checkForPendingMandateStatus() {
         Log.d("LoginActivity", "=== Checking for pending mandate status ===")
-        android.widget.Toast.makeText(this, "LoginActivity checking for pending mandate...", android.widget.Toast.LENGTH_SHORT).show()
+       
         
         val prefs = getSharedPreferences("UPI_MANDATE_PREFS", MODE_PRIVATE)
         val pendingMandateId = prefs.getString("PENDING_MANDATE_ID", null)
@@ -92,12 +120,12 @@ class LoginActivity : ComponentActivity() {
             
             if (timeDiff < tenMinutesInMillis) {
                 Log.d("LoginActivity", "✅ Found pending mandate, launching status check: $pendingMandateId")
-                android.widget.Toast.makeText(this, "Found pending mandate! Launching status check...", android.widget.Toast.LENGTH_LONG).show()
+                
                 
                 // Clear the stored mandate ID
                 prefs.edit().remove("PENDING_MANDATE_ID").remove("MANDATE_TIMESTAMP").apply()
                 
-                // Launch status activity
+                // Launch status activity and wait for result
                 val statusIntent = Intent(this, MandateStatusActivity::class.java).apply {
                     putExtra("MANDATE_ID", pendingMandateId)
                     intent.getStringExtra("MERCHANT_PACKAGE")?.let {
@@ -107,13 +135,10 @@ class LoginActivity : ComponentActivity() {
                 startActivity(statusIntent)
             } else {
                 Log.d("LoginActivity", "❌ Pending mandate too old (${timeDiff / 1000}s), ignoring")
-                android.widget.Toast.makeText(this, "Pending mandate too old, ignoring", android.widget.Toast.LENGTH_SHORT).show()
-                prefs.edit().remove("PENDING_MANDATE_ID").remove("MANDATE_TIMESTAMP").apply()
+                        prefs.edit().remove("PENDING_MANDATE_ID").remove("MANDATE_TIMESTAMP").apply()
             }
-        } else {
-            Log.d("LoginActivity", "❌ No pending mandate found")
-            android.widget.Toast.makeText(this, "No pending mandate found", android.widget.Toast.LENGTH_SHORT).show()
         }
+       
     }
 }
 
@@ -291,7 +316,7 @@ fun LoginScreen(
                                                 merchantPackage?.let { putExtra("MERCHANT_PACKAGE", it) }
                                             }
                                             context.startActivity(intent)
-                                            Toast.makeText(context, "Demo Mode: Account details fetched successfully", Toast.LENGTH_SHORT).show()
+                                       
                                         } catch (e: Exception) {
                                             Toast.makeText(context, "Exception: ${e.message}", Toast.LENGTH_SHORT).show()
                                         } finally {

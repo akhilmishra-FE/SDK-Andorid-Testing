@@ -7,6 +7,28 @@ import android.content.Intent
 /**
  * Main SDK Manager for UPI AutoPay functionality
  * This is the entry point for merchant apps to integrate the SDK
+ * 
+ * IMPORTANT: To receive results from the SDK, use registerForActivityResult in your calling app:
+ * 
+ * Example usage in your MainActivity:
+ * ```
+ * private val sdkLauncher = registerForActivityResult(
+ *     ActivityResultContracts.StartActivityForResult()
+ * ) { result ->
+ *     if (result.resultCode == Activity.RESULT_OK) {
+ *         val status = result.data?.getStringExtra("MANDATE_STATUS")
+ *         val message = result.data?.getStringExtra("MESSAGE")
+ *         // Handle success
+ *     } else {
+ *         val error = result.data?.getStringExtra("ERROR_MESSAGE")
+ *         // Handle failure
+ *     }
+ * }
+ * 
+ * // Launch SDK
+ * val intent = Intent(this, LoginActivity::class.java)
+ * sdkLauncher.launch(intent)
+ * ```
  */
 object UPIAutoPaySDKManager {
     

@@ -148,12 +148,7 @@ class DetailsActivity : ComponentActivity() {
                 startActivity(upiIntent)
                 Log.d("DetailsActivity", "Successfully launched UPI intent directly")
                 
-                // Show success toast
-                android.widget.Toast.makeText(
-                    this, 
-                    "UPI app launched. Complete the mandate and return.", 
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
+             
                 
                 // Store mandate ID for later use when user returns
                 storeMandateIdForStatusCheck(mandateId)
@@ -170,11 +165,7 @@ class DetailsActivity : ComponentActivity() {
                     startActivity(chooser)
                     Log.d("DetailsActivity", "Successfully launched UPI chooser")
                     
-                    android.widget.Toast.makeText(
-                        this, 
-                        "Select your UPI app to complete the mandate.", 
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
+                  
                     
                     // Store mandate ID for later use when user returns
                     storeMandateIdForStatusCheck(mandateId)
@@ -185,12 +176,7 @@ class DetailsActivity : ComponentActivity() {
                 } catch (chooserException: Exception) {
                     Log.e("DetailsActivity", "Chooser launch also failed", chooserException)
                     
-                    // Last resort: Show error but provide manual option
-                    android.widget.Toast.makeText(
-                        this, 
-                        "Unable to launch UPI app automatically. Please open your UPI app manually and use this link: $deepLink", 
-                        android.widget.Toast.LENGTH_LONG
-                    ).show()
+                   
                     
                     // Try to copy link to clipboard for manual use
                     try {
@@ -198,11 +184,7 @@ class DetailsActivity : ComponentActivity() {
                         val clip = android.content.ClipData.newPlainText("UPI Mandate Link", deepLink)
                         clipboard.setPrimaryClip(clip)
                         
-                        android.widget.Toast.makeText(
-                            this, 
-                            "UPI link copied to clipboard. Paste it in your browser or UPI app.", 
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
+                       
                     } catch (clipboardException: Exception) {
                         Log.e("DetailsActivity", "Failed to copy to clipboard", clipboardException)
                     }
@@ -211,11 +193,7 @@ class DetailsActivity : ComponentActivity() {
             
         } catch (e: Exception) {
             Log.e("DetailsActivity", "Complete failure in UPI launch", e)
-            android.widget.Toast.makeText(
-                this, 
-                "Error: ${e.message}. Please try opening your UPI app manually.", 
-                android.widget.Toast.LENGTH_LONG
-            ).show()
+            
         }
     }
     
@@ -234,7 +212,7 @@ class DetailsActivity : ComponentActivity() {
         Log.d("DetailsActivity", "💾 Mandate ID: $mandateId")
         Log.d("DetailsActivity", "💾 Timestamp: $timestamp")
         
-        android.widget.Toast.makeText(this, "Mandate stored! Complete payment and return to app", android.widget.Toast.LENGTH_LONG).show()
+       
     }
     
     // Check if there's a pending mandate to check status for
@@ -286,7 +264,7 @@ class DetailsActivity : ComponentActivity() {
         }
     }
     
-    // Launch status activity
+    // Launch status activity and wait for result
     private fun launchStatusActivity(mandateId: String) {
         Log.d("DetailsActivity", "🚀 === LAUNCHING MANDATE STATUS ACTIVITY ===")
         Log.d("DetailsActivity", "🚀 Mandate ID: $mandateId")
@@ -302,10 +280,11 @@ class DetailsActivity : ComponentActivity() {
             }
         }
         
-        Log.d("DetailsActivity", "🚀 Starting MandateStatusActivity...")
+        Log.d("DetailsActivity", "🚀 Starting MandateStatusActivity for result...")
         startActivity(statusIntent)
         Log.d("DetailsActivity", "🚀 MandateStatusActivity launched successfully")
     }
+    
     
     override fun onResume() {
         super.onResume()
@@ -326,23 +305,6 @@ class DetailsActivity : ComponentActivity() {
         }, 100) // Very small delay for immediate response
     }
     
-    // Debug function to check all installed apps
-    private fun debugInstalledApps() {
-        val packageManager = packageManager
-        val installedApps = packageManager.getInstalledApplications(0)
-        
-        Log.d("DetailsActivity", "=== ALL INSTALLED APPS ===")
-        installedApps.forEach { app ->
-            if (app.packageName.contains("pay", ignoreCase = true) || 
-                app.packageName.contains("upi", ignoreCase = true) ||
-                app.packageName.contains("phonepe", ignoreCase = true) ||
-                app.packageName.contains("paytm", ignoreCase = true) ||
-                app.packageName.contains("google", ignoreCase = true)) {
-                Log.d("DetailsActivity", "Potential UPI app: ${app.packageName}")
-            }
-        }
-        Log.d("DetailsActivity", "=== END INSTALLED APPS ===")
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

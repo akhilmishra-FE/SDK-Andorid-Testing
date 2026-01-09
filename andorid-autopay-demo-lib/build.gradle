@@ -73,7 +73,7 @@ afterEvaluate {
             maven(MavenPublication) {
                 groupId = 'com.github.akhilmishra-FE'
                 artifactId = 'SDK-Andorid-Testing'
-                version = project.findProperty('VERSION_NAME') ?: '1.3.0' // Enhanced DNS diagnostics and network troubleshooting guidance
+                version = project.findProperty('VERSION_NAME') ?: '1.3.2' // Fixed redirect with moveTaskToBack as primary approach
                 
                 // Publish the AAR artifact - this automatically includes AAR and sources JAR
                 from components.release
