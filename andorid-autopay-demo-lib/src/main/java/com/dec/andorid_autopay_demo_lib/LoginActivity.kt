@@ -68,6 +68,9 @@ data class AccountData(
 
 class LoginActivity : ComponentActivity() {
     
+    companion object {
+        private const val DETAILS_ACTIVITY_REQUEST_CODE = 1003
+    }
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -139,6 +142,27 @@ class LoginActivity : ComponentActivity() {
             }
         }
        
+    }
+    
+    /**
+     * CRITICAL FIX: Handle result from DetailsActivity  
+     * When DetailsActivity finishes, we also need to finish LoginActivity
+     * and pass the result to the merchant app
+     */
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        
+        if (requestCode == DETAILS_ACTIVITY_REQUEST_CODE) {
+            Log.d("LoginActivity", "✅ Received result from DetailsActivity")
+            Log.d("LoginActivity", "✅ Result Code: $resultCode")
+            
+            // Pass the result to whoever called us (merchant app)
+            setResult(resultCode, data)
+            
+            // CRITICAL: Finish this activity so we return to merchant app
+            finish()
+            Log.d("LoginActivity", "✅ LoginActivity finished - returning to merchant app")
+        }
     }
 }
 
@@ -315,7 +339,9 @@ fun LoginScreen(
                                                 // Pass merchant package for return navigation
                                                 merchantPackage?.let { putExtra("MERCHANT_PACKAGE", it) }
                                             }
-                                            context.startActivity(intent)
+                                            // CRITICAL FIX: Use startActivityForResult so we can handle when it finishes
+                                            // Get Activity from context and call startActivityForResult
+                                            (context as? ComponentActivity)?.startActivityForResult(intent, 1003)
                                        
                                         } catch (e: Exception) {
                                             Toast.makeText(context, "Exception: ${e.message}", Toast.LENGTH_SHORT).show()

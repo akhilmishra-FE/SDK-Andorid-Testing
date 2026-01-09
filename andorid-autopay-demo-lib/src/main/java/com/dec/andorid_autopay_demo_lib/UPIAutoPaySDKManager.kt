@@ -26,11 +26,89 @@ import android.content.Intent
  * }
  * 
  * // Launch SDK
- * val intent = Intent(this, LoginActivity::class.java)
- * sdkLauncher.launch(intent)
+ * UPIAutoPaySDKManager.startMandateCreation(this, mandateDetails, sdkLauncher)
  * ```
  */
 object UPIAutoPaySDKManager {
+    
+    // Store callback for returning results
+    private var mandateCallback: UPIAutoPaySDK.MandateCallback? = null
+    
+    /**
+     * Initialize the SDK with configuration
+     */
+    fun initialize(context: Context, config: UPIAutoPaySDK.Configuration) {
+        // Store configuration for SDK use
+        // This can be expanded to store config in SharedPreferences or singleton
+    }
+    
+    /**
+     * Start mandate creation flow
+     * This is the main entry point for merchant apps
+     */
+    fun startMandateCreation(
+        context: Context,
+        mandateDetails: UPIAutoPaySDK.MandateDetails,
+        callback: UPIAutoPaySDK.MandateCallback
+    ) {
+        // Store callback for later use
+        mandateCallback = callback
+        
+        val intent = Intent(context, LoginActivity::class.java).apply {
+            // Pass mandate details
+            putExtra("AMOUNT", mandateDetails.amount)
+            putExtra("RECURRENCE", mandateDetails.recurrence)
+            putExtra("START_DATE", mandateDetails.startDate)
+            putExtra("END_DATE", mandateDetails.endDate)
+            putExtra("PURPOSE", mandateDetails.purpose)
+            putExtra("MERCHANT_REF_ID", mandateDetails.merchantReferenceId)
+            putExtra("CUSTOMER_VPA", mandateDetails.customerVpa)
+            
+            // Store merchant package for return navigation
+            putExtra("MERCHANT_PACKAGE", context.packageName)
+            
+            // CRITICAL: Don't use NEW_TASK flag - stay in same task as merchant app
+            // This ensures proper return navigation
+        }
+        
+        // Launch as activity for result if context is Activity
+        if (context is Activity) {
+            context.startActivityForResult(intent, SDK_REQUEST_CODE)
+        } else {
+            // Fallback for non-Activity context
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }
+    }
+    
+    /**
+     * Handle activity result from SDK
+     * Call this from merchant app's onActivityResult
+     */
+    fun handleActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == SDK_REQUEST_CODE) {
+            mandateCallback?.let { callback ->
+                when (resultCode) {
+                    Activity.RESULT_OK -> {
+                        val mandateId = data?.getStringExtra("DECENTRO_MANDATE_ID") ?: ""
+                        callback.onSuccess(mandateId)
+                    }
+                    Activity.RESULT_CANCELED -> {
+                        val errorMessage = data?.getStringExtra("ERROR_MESSAGE") ?: "Operation cancelled"
+                        callback.onFailure(errorMessage)
+                    }
+                    else -> {
+                        callback.onCancelled()
+                    }
+                }
+                // Clear callback after use
+                mandateCallback = null
+            }
+        }
+    }
+    
+    // Constants for SDK
+    const val SDK_REQUEST_CODE = 1001
     
     /**
      * Launch the UPI AutoPay SDK from merchant app

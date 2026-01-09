@@ -281,10 +281,34 @@ class DetailsActivity : ComponentActivity() {
         }
         
         Log.d("DetailsActivity", "🚀 Starting MandateStatusActivity for result...")
-        startActivity(statusIntent)
+        startActivityForResult(statusIntent, MANDATE_STATUS_REQUEST_CODE)
         Log.d("DetailsActivity", "🚀 MandateStatusActivity launched successfully")
     }
     
+    /**
+     * CRITICAL FIX: Handle result from MandateStatusActivity
+     * When MandateStatusActivity finishes, we also need to finish DetailsActivity
+     * and pass the result to the merchant app
+     */
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        
+        if (requestCode == MANDATE_STATUS_REQUEST_CODE) {
+            Log.d("DetailsActivity", "✅ Received result from MandateStatusActivity")
+            Log.d("DetailsActivity", "✅ Result Code: $resultCode")
+            
+            // Pass the result to whoever called us (LoginActivity or merchant app)
+            setResult(resultCode, data)
+            
+            // CRITICAL: Finish this activity so we don't stay on this page
+            finish()
+            Log.d("DetailsActivity", "✅ DetailsActivity finished - returning to caller")
+        }
+    }
+    
+    companion object {
+        private const val MANDATE_STATUS_REQUEST_CODE = 1002
+    }
     
     override fun onResume() {
         super.onResume()

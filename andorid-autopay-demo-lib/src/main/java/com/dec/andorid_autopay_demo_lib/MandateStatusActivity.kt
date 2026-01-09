@@ -106,9 +106,8 @@ class MandateStatusActivity : ComponentActivity() {
         setResult(RESULT_OK, resultIntent)
         Log.d(TAG, "✅ Result set to RESULT_OK")
         
-        // Close all SDK activities and return to main app
-        finishAffinity()
-        Log.d(TAG, "✅ All SDK activities closed - returned to main app")
+        // CRITICAL FIX: Return to merchant app properly
+        returnToMerchantApp()
     }
     
     /**
@@ -130,9 +129,25 @@ class MandateStatusActivity : ComponentActivity() {
         setResult(RESULT_CANCELED, resultIntent)
         Log.d(TAG, "❌ Result set to RESULT_CANCELED")
         
-        // Close all SDK activities and return to main app
-        finishAffinity()
-        Log.d(TAG, "❌ All SDK activities closed - returned to main app")
+        // CRITICAL FIX: Return to merchant app properly
+        returnToMerchantApp()
+    }
+    
+    /**
+     * CRITICAL FIX: Properly return to merchant app
+     * This ensures the user goes back to the merchant app, not stays in SDK
+     * Now with proper activity result chain (MandateStatusActivity -> DetailsActivity -> LoginActivity -> Merchant App)
+     */
+    private fun returnToMerchantApp() {
+        Log.d(TAG, "🔄 === RETURNING TO MERCHANT APP ===")
+        
+        // Since we now use startActivityForResult chain:
+        // MandateStatusActivity finishes -> DetailsActivity receives result and finishes
+        // -> LoginActivity receives result and finishes -> Merchant App receives result
+        
+        // Just finish this activity - the result chain will handle the rest
+        finish()
+        Log.d(TAG, "✅ MandateStatusActivity finished - result chain will close other activities")
     }
 }
 
