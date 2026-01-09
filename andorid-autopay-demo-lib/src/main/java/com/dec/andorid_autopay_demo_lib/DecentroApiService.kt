@@ -71,12 +71,16 @@ data class MandateData(
 /**
  * Manages the creation of Retrofit and OkHttp clients with robust, industry-standard
  * resilience for mobile networking challenges.
+ * 
+ * SECURITY NOTE: Credentials are loaded from BuildConfig (injected from local.properties)
+ * and are NOT hardcoded or committed to Git.
  */
 object DecentroRetrofitClient {
 
-    private const val BASE_URL = "https://api.decentro.tech/"
-    const val CLIENT_ID = "neowise_prepod"
-    const val CLIENT_SECRET = "BITUm29bx9DpVZK26gZ73DA8lXfkfH2u"
+    // Load credentials from BuildConfig (injected securely at build time)
+    private val BASE_URL = BuildConfig.DECENTRO_BASE_URL.ifEmpty { "https://api.decentro.tech/" }
+    val CLIENT_ID = BuildConfig.DECENTRO_CLIENT_ID
+    val CLIENT_SECRET = BuildConfig.DECENTRO_CLIENT_SECRET
 
     /**
      * A single, resilient OkHttp client instance.

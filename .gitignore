@@ -1,6 +1,5 @@
 *.iml
 .gradle
-/local.properties
 /.idea/caches
 /.idea/libraries
 /.idea/modules.xml
@@ -12,4 +11,40 @@
 /captures
 .externalNativeBuild
 .cxx
+
+# ============================================
+# SECURITY: SENSITIVE DATA - NEVER COMMIT!
+# ============================================
+
+# Local configuration containing sensitive keys and secrets
 local.properties
+
+# Gradle properties may contain GitLab tokens and project IDs
+gradle.properties
+
+# API keys and secrets (if stored separately)
+**/secrets.properties
+**/api-keys.properties
+*.keystore
+*.jks
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# ============================================
+# Build outputs that may contain secrets
+# ============================================
+**/build/
+*.apk
+*.aab
+*.aar
+
+# ============================================
+# IDE-specific files that might leak info
+# ============================================
+.idea/
+*.iws
+*.ipr
+out/

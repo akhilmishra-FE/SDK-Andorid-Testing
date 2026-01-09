@@ -1,0 +1,59 @@
+# ============================================
+# gradle.properties.template
+# ============================================
+# 
+# IMPORTANT: This is a TEMPLATE file.
+# 
+# TO USE:
+# 1. Copy this file to: gradle.properties
+# 2. Fill in your actual values
+# 3. Be careful committing gradle.properties
+#
+# ============================================
+
+# Project-wide Gradle settings.
+org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+org.gradle.daemon=true
+org.gradle.parallel=false
+org.gradle.java.installations.auto-detect=true
+org.gradle.java.installations.auto-download=false
+
+# AndroidX package structure
+android.useAndroidX=true
+kotlin.code.style=official
+android.nonTransitiveRClass=true
+
+# ============================================
+# GitLab Maven Publishing Configuration
+# ============================================
+
+# Version of the SDK (update this for each release)
+VERSION_NAME=1.0.0
+
+# GitLab Project ID for decentro-autopay-android
+# Find this in GitLab: Settings > General > Project ID
+GITLAB_PROJECT_ID=77552064
+
+# ============================================
+# SENSITIVE DATA
+# ============================================
+# Option 1: Store in ~/.gradle/gradle.properties (RECOMMENDED)
+# Option 2: Store here (but DO NOT commit to Git!)
+# Option 3: Use environment variables
+# ============================================
+
+# GitLab Private Token (DO NOT COMMIT THIS!)
+# Generate token in GitLab: User Settings > Access Tokens
+# Scopes: api + write_repository
+# GITLAB_PRIVATE_TOKEN=glpat-your_token_here
+
+# ============================================
+# NOTES
+# ============================================
+# For maximum security, store GITLAB_PRIVATE_TOKEN in:
+# ~/.gradle/gradle.properties (home directory, not in project)
+# 
+# This file can be committed to Git if you keep
+# sensitive data in ~/.gradle/gradle.properties
+# ============================================
+
