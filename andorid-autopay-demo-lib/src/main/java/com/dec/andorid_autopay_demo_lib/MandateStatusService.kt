@@ -7,6 +7,8 @@ import android.net.NetworkCapabilities
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import java.util.*
 
 // Note: MandateData is defined in DecentroApiService.kt to avoid duplication
@@ -75,8 +77,44 @@ class MandateStatusService(private val context: Context? = null) {
         val isReady = isNetworkAvailable() // Re-check the network status after the delay
         if (isReady) {
             Log.d(TAG, "✅ [Stabilization] Network is stable and ready.")
+            // Test DNS connectivity after network is stable
+            testDNSConnectivity()
         } else {
             Log.w(TAG, "⚠️ [Stabilization] Network is still not ready after initial delay.")
+        }
+    }
+    
+    /**
+     * Test DNS connectivity to help diagnose UnknownHostException issues
+     */
+    private suspend fun testDNSConnectivity() {
+        Log.d(TAG, "🔍 === DNS CONNECTIVITY TEST ===")
+        try {
+            // Test DNS resolution for our API host
+            val host = "api.decentro.tech"
+            Log.d(TAG, "🔍 Testing DNS resolution for: $host")
+            
+            withContext(Dispatchers.IO) {
+                val addresses = java.net.InetAddress.getAllByName(host)
+                Log.d(TAG, "✅ DNS Resolution Success:")
+                addresses.forEach { address ->
+                    Log.d(TAG, "   📍 IP: ${address.hostAddress}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ DNS Resolution Failed: ${e.message}")
+            Log.e(TAG, "❌ This may cause UnknownHostException in API calls")
+            
+            // Try alternative DNS test
+            try {
+                Log.d(TAG, "🔄 Testing alternative DNS (Google DNS)...")
+                withContext(Dispatchers.IO) {
+                    val googleDNS = java.net.InetAddress.getAllByName("8.8.8.8")
+                    Log.d(TAG, "✅ Alternative DNS works: ${googleDNS[0].hostAddress}")
+                }
+            } catch (altE: Exception) {
+                Log.e(TAG, "❌ Alternative DNS also failed: ${altE.message}")
+            }
         }
     }
 
@@ -169,9 +207,30 @@ class MandateStatusService(private val context: Context? = null) {
                 Log.e(TAG, "💥 [API Attempt $attemptNum] EXCEPTION: ${e.javaClass.simpleName} - ${e.message}", e)
 
                 if (attemptNum < maxRetries) {
-                    val delayMs = 2000L * attemptNum
-                    Log.d(TAG, "🔄 [API Attempt $attemptNum] Waiting ${delayMs}ms before next retry...")
+                    // Enhanced delay logic for different exception types
+                    val delayMs = when (e) {
+                        is java.net.UnknownHostException -> {
+                            Log.w(TAG, "🌐 DNS Resolution Failed - using longer delay for network recovery")
+                            5000L * attemptNum // Longer delay for DNS issues
+                        }
+                        is java.net.SocketTimeoutException -> {
+                            Log.w(TAG, "⏱️ Socket Timeout - using standard delay")
+                            3000L * attemptNum // Medium delay for timeouts
+                        }
+                        else -> {
+                            Log.w(TAG, "🔄 General network error - using standard delay")
+                            2000L * attemptNum // Standard delay for other errors
+                        }
+                    }
+                    
+                    Log.d(TAG, "🔄 [API Attempt $attemptNum] ${e.javaClass.simpleName} - Waiting ${delayMs}ms before next retry...")
                     delay(delayMs)
+                    
+                    // For DNS issues, test connectivity again before retry
+                    if (e is java.net.UnknownHostException) {
+                        Log.d(TAG, "🔍 DNS issue detected - testing connectivity before retry...")
+                        testDNSConnectivity()
+                    }
                 }
             }
         }
