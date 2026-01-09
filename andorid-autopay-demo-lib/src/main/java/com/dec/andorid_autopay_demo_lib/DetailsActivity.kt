@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -127,79 +128,107 @@ class DetailsActivity : ComponentActivity() {
         val deepLink = mandateService.generateMandateDeepLink()
         val mandateId = mandateService.generateMandateId()
         
-        Log.d("DetailsActivity", "Deep Link: $deepLink")
-        Log.d("DetailsActivity", "Mandate ID: $mandateId")
+        Log.d("DetailsActivity", "🚀 Deep Link: $deepLink")
+        Log.d("DetailsActivity", "🚀 Mandate ID: $mandateId")
+        
+        // Debug UPI app support
+        debugUPIAppSupport()
+        
+        // Test simple UPI app detection
+        testSimpleUPIDetection()
+        
+        // Show comprehensive app detection summary
+        showAppDetectionSummary()
         
         try {
-            // Since the deep link works when opened directly, let's just launch it
             val uri = Uri.parse(deepLink)
-            Log.d("DetailsActivity", "Parsed URI: $uri")
+            Log.d("DetailsActivity", "📱 Parsed URI: $uri")
             
-            // Create intent for UPI mandate
+            // Create intent for UPI - try mandate first, fallback to payment
             val upiIntent = Intent(Intent.ACTION_VIEW).apply {
                 data = uri
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                // Do NOT use FLAG_ACTIVITY_NEW_TASK - it breaks return navigation
             }
             
-            Log.d("DetailsActivity", "Attempting to launch UPI intent directly...")
+            // Also create a fallback basic UPI payment intent
+            val fallbackUri = Uri.parse("upi://pay?pa=neowisedemo.decfin@ypbiz&pn=Merchant&am=2.00&cu=INR&tn=UPI%20Payment")
+            val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
+                data = fallbackUri
+            }
             
-            // Try direct launch first (since you confirmed the link works)
-            try {
-                startActivity(upiIntent)
-                Log.d("DetailsActivity", "Successfully launched UPI intent directly")
-                
-             
-                
-                // Store mandate ID for later use when user returns
+            Log.d("DetailsActivity", "🔍 Checking for available UPI apps...")
+            
+            // Try multiple approaches to find UPI apps
+            val allUpiApps = findAllUPIApps()
+            
+            Log.d("DetailsActivity", "📱 Found ${allUpiApps.size} total UPI apps:")
+            allUpiApps.forEach { resolveInfo ->
+                Log.d("DetailsActivity", "   📱 ${resolveInfo.activityInfo.packageName} - ${resolveInfo.loadLabel(packageManager)}")
+            }
+            
+            if (allUpiApps.isNotEmpty()) {
+                // Store mandate ID BEFORE launching UPI app
                 storeMandateIdForStatusCheck(mandateId)
                 
-                // DO NOT start status checking immediately
-                // Wait for user to return to app manually
+                // Try mandate first, if no apps support it, use basic payment
+                val mandateApps = packageManager.queryIntentActivities(upiIntent, 0)
+                val intentToUse = if (mandateApps.isNotEmpty()) {
+                    Log.d("DetailsActivity", "✅ Using UPI Mandate intent (${mandateApps.size} apps support it)")
+                    upiIntent
+                } else {
+                    Log.d("DetailsActivity", "⚠️ No apps support UPI Mandate, using basic payment intent")
+                    fallbackIntent
+                }
                 
-            } catch (directLaunchException: Exception) {
-                Log.w("DetailsActivity", "Direct launch failed, trying with chooser", directLaunchException)
+                // Always use the custom chooser for better intent validation
+                Log.d("DetailsActivity", "🚀 Launching UPI apps with safe intent handling...")
+                showUPIAppChooser(allUpiApps, intentToUse)
                 
-                // If direct launch fails, try with chooser
-                try {
-                    val chooser = Intent.createChooser(upiIntent, "Complete UPI Mandate")
-                    startActivity(chooser)
-                    Log.d("DetailsActivity", "Successfully launched UPI chooser")
+                Log.d("DetailsActivity", "🚀 UPI app launched successfully")
+                
+            } else {
+                Log.e("DetailsActivity", "❌ No UPI apps found that can handle mandate")
+                
+                // This should not happen since findAllUPIApps() should find apps
+                Log.e("DetailsActivity", "🔄 This is unexpected - findAllUPIApps() found apps but they're not available")
+                val genericResolveInfos = packageManager.queryIntentActivities(fallbackIntent, 0)
+                Log.d("DetailsActivity", "📱 Found ${genericResolveInfos.size} generic UPI apps:")
+                genericResolveInfos.forEach { resolveInfo ->
+                    Log.d("DetailsActivity", "   📱 ${resolveInfo.activityInfo.packageName} - ${resolveInfo.loadLabel(packageManager)}")
+                }
+                
+                if (genericResolveInfos.isNotEmpty()) {
+                    // Show error but also try to launch with generic UPI payment
+                    Log.d("DetailsActivity", "⚠️ Mandate not supported, trying generic UPI payment as fallback")
                     
-                  
-                    
-                    // Store mandate ID for later use when user returns
+                    // Store mandate ID anyway
                     storeMandateIdForStatusCheck(mandateId)
                     
-                    // DO NOT start status checking immediately
-                    // Wait for user to return to app manually
+                    // Try to launch generic UPI payment
+                    val chooser = Intent.createChooser(fallbackIntent, "Select UPI App (Mandate not supported)")
+                    startActivity(chooser)
                     
-                } catch (chooserException: Exception) {
-                    Log.e("DetailsActivity", "Chooser launch also failed", chooserException)
-                    
-                   
-                    
-                    // Try to copy link to clipboard for manual use
-                    try {
-                        val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        val clip = android.content.ClipData.newPlainText("UPI Mandate Link", deepLink)
-                        clipboard.setPrimaryClip(clip)
-                        
-                       
-                    } catch (clipboardException: Exception) {
-                        Log.e("DetailsActivity", "Failed to copy to clipboard", clipboardException)
-                    }
+                    Toast.makeText(this, 
+                        "UPI Mandate not directly supported. Launching generic UPI payment.", 
+                        Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, 
+                        "No UPI apps found. Please install PhonePe, Google Pay, or CRED.", 
+                        Toast.LENGTH_LONG).show()
                 }
             }
             
         } catch (e: Exception) {
-            Log.e("DetailsActivity", "Complete failure in UPI launch", e)
-            
+            Log.e("DetailsActivity", "❌ Error launching UPI intent: ${e.message}", e)
+            android.widget.Toast.makeText(this, 
+                "Error launching UPI app: ${e.message}", 
+                android.widget.Toast.LENGTH_LONG).show()
         }
     }
     
     // Store mandate ID in SharedPreferences for later use
     private fun storeMandateIdForStatusCheck(mandateId: String) {
-        val prefs = getSharedPreferences("UPI_MANDATE_PREFS", MODE_PRIVATE)
+        val prefs = getSharedPreferences("UPI_MANDATE_PREFS", Context.MODE_PRIVATE)
         val timestamp = System.currentTimeMillis()
         
         prefs.edit().apply {
@@ -219,7 +248,7 @@ class DetailsActivity : ComponentActivity() {
     private fun checkForPendingMandateStatus() {
         Log.d("DetailsActivity", "🔍 === CHECKING FOR PENDING MANDATE STATUS ===")
         
-        val prefs = getSharedPreferences("UPI_MANDATE_PREFS", MODE_PRIVATE)
+        val prefs = getSharedPreferences("UPI_MANDATE_PREFS", Context.MODE_PRIVATE)
         val pendingMandateId = prefs.getString("PENDING_MANDATE_ID", null)
         val timestamp = prefs.getLong("MANDATE_TIMESTAMP", 0)
         
@@ -306,6 +335,548 @@ class DetailsActivity : ComponentActivity() {
         }
     }
     
+    /**
+     * Test different UPI schemes to see which apps support what
+     */
+    private fun debugUPIAppSupport() {
+        Log.d("DetailsActivity", "🔍 === COMPREHENSIVE UPI APP DEBUG ===")
+        
+        val testSchemes = listOf(
+            "upi://mandate?pa=test@upi" to "UPI Mandate",
+            "upi://pay?pa=test@upi&pn=Test&am=1&cu=INR" to "UPI Payment",
+            "upi://pay" to "Basic UPI",
+            "phonepe://pay" to "PhonePe Specific",
+            "gpay://upi/pay" to "Google Pay Specific", 
+            "paytm://pay" to "Paytm Specific",
+            "bhim://pay" to "BHIM Specific",
+            "mobikwik://pay" to "MobiKwik Specific"
+        )
+        
+        testSchemes.forEach { (uriString, description) ->
+            try {
+                val testIntent = Intent(Intent.ACTION_VIEW, Uri.parse(uriString))
+                val resolveInfos = packageManager.queryIntentActivities(testIntent, 0)
+                Log.d("DetailsActivity", "📱 $description: ${resolveInfos.size} apps")
+                resolveInfos.forEach { resolveInfo ->
+                    val appName = resolveInfo.loadLabel(packageManager)
+                    Log.d("DetailsActivity", "   ✅ ${resolveInfo.activityInfo.packageName} - $appName")
+                }
+            } catch (e: Exception) {
+                Log.e("DetailsActivity", "❌ Error testing $description: ${e.message}")
+            }
+        }
+        
+        // Also test for installed UPI apps by package name
+        Log.d("DetailsActivity", "🔍 === CHECKING SPECIFIC UPI APPS ===")
+        val knownUpiApps = mapOf(
+            "com.phonepe.app" to "PhonePe",
+            "com.google.android.apps.nfc.payment" to "Google Pay", 
+            "com.dreamplug.androidapp" to "CRED",
+            "net.one97.paytm" to "Paytm",
+            "in.org.npci.upiapp" to "BHIM UPI",
+            "com.mobikwik_new" to "MobiKwik",
+            "com.freecharge.android" to "Freecharge",
+            "com.amazon.mShop.android.shopping" to "Amazon Pay"
+        )
+        
+        knownUpiApps.forEach { (packageName, appName) ->
+            try {
+                packageManager.getPackageInfo(packageName, 0)
+                Log.d("DetailsActivity", "✅ $appName ($packageName) is INSTALLED")
+            } catch (e: Exception) {
+                Log.d("DetailsActivity", "❌ $appName ($packageName) is NOT installed")
+            }
+        }
+        
+        Log.d("DetailsActivity", "🔍 === END COMPREHENSIVE DEBUG ===")
+    }
+
+    /**
+     * Find ALL UPI apps installed on device - comprehensive detection
+     */
+    private fun findAllUPIApps(): List<android.content.pm.ResolveInfo> {
+        Log.d("DetailsActivity", "🔍 === FINDING ALL UPI APPS ON DEVICE ===")
+        
+        val allUpiApps = mutableSetOf<android.content.pm.ResolveInfo>()
+        
+        // Method 1: Comprehensive list of known UPI apps (expanded)
+        val knownUpiApps = mapOf(
+            // Popular UPI Apps
+            "com.phonepe.app" to "PhonePe",
+            "com.google.android.apps.nfc.payment" to "Google Pay",
+            "com.dreamplug.androidapp" to "CRED",
+            "net.one97.paytm" to "Paytm",
+            "in.org.npci.upiapp" to "BHIM UPI",
+            "com.mobikwik_new" to "MobiKwik",
+            "com.freecharge.android" to "Freecharge",
+            
+            // Bank UPI Apps
+            "com.csam.icici.bank.imobile" to "iMobile Pay",
+            "com.axis.mobile" to "Axis Mobile",
+            "com.sbi.upi" to "SBI Pay",
+            "com.unionbank.ebanking" to "Union Bank UPI",
+            "com.infosys.finacle.digimoney" to "Canara Bank UPI",
+            "com.snapwork.hdfc" to "HDFC Bank MobileBanking",
+            "com.kotakbank.pcbanking" to "Kotak Mobile Banking",
+            "com.rblbank.mobank" to "RBL MoBank",
+            "com.yesbank.yesmobile" to "Yes Mobile",
+            "com.idbi.mbanking" to "IDBI Bank GO Mobile+",
+            
+            // Other UPI Apps
+            "com.amazon.mShop.android.shopping" to "Amazon Pay",
+            "com.whatsapp" to "WhatsApp",
+            "com.facebook.orca" to "Facebook Messenger",
+            "com.jio.myjio" to "MyJio",
+            "com.airtel.money" to "Airtel Thanks",
+            "com.bsb.hike" to "Hike Sticker Chat",
+            "com.truecaller" to "Truecaller",
+            "com.razorpay.payments.app" to "Razorpay",
+            "com.phonepe.simulator" to "PhonePe Simulator",
+            "com.fino.paytech" to "Fino Payments Bank"
+        )
+        
+        Log.d("DetailsActivity", "🔍 Method 1: Checking ${knownUpiApps.size} known UPI apps...")
+        var installedCount = 0
+        knownUpiApps.forEach { (packageName, appName) ->
+            try {
+                val packageInfo = packageManager.getPackageInfo(packageName, 0)
+                Log.d("DetailsActivity", "✅ $appName ($packageName) is INSTALLED")
+                installedCount++
+                
+                // Create a ResolveInfo for this app
+                val resolveInfo = android.content.pm.ResolveInfo()
+                resolveInfo.activityInfo = android.content.pm.ActivityInfo()
+                resolveInfo.activityInfo.packageName = packageName
+                resolveInfo.activityInfo.applicationInfo = packageInfo.applicationInfo
+                allUpiApps.add(resolveInfo)
+                
+            } catch (e: Exception) {
+                // App not installed - this is normal, don't log as error
+            }
+        }
+        Log.d("DetailsActivity", "✅ Found $installedCount installed UPI apps from known list")
+        
+        // Method 2: Query for apps that can handle various UPI schemes
+        val upiSchemes = listOf(
+            "upi://pay?pa=test@upi&pn=Test&am=1&cu=INR" to "Standard UPI Payment",
+            "upi://pay" to "Basic UPI",
+            "upi://mandate" to "UPI Mandate",
+            "phonepe://pay" to "PhonePe Scheme",
+            "gpay://upi/pay" to "Google Pay Scheme",
+            "paytm://pay" to "Paytm Scheme"
+        )
+        
+        Log.d("DetailsActivity", "🔍 Method 2: Querying apps for different UPI schemes...")
+        upiSchemes.forEach { (scheme, schemeName) ->
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(scheme))
+                val apps = packageManager.queryIntentActivities(intent, 0)
+                Log.d("DetailsActivity", "🔍 $schemeName: Found ${apps.size} apps")
+                apps.forEach { resolveInfo ->
+                    allUpiApps.add(resolveInfo)
+                    val appName = try {
+                        resolveInfo.loadLabel(packageManager)
+                    } catch (e: Exception) {
+                        resolveInfo.activityInfo.packageName
+                    }
+                    Log.d("DetailsActivity", "   📱 $appName (${resolveInfo.activityInfo.packageName})")
+                }
+            } catch (e: Exception) {
+                Log.e("DetailsActivity", "❌ Error querying $schemeName: ${e.message}")
+            }
+        }
+        
+        // Method 3: Search for apps with "UPI" or "Pay" in their name
+        Log.d("DetailsActivity", "🔍 Method 3: Searching all installed apps for UPI/Payment apps...")
+        try {
+            val allInstalledApps = packageManager.getInstalledApplications(0)
+            val paymentKeywords = listOf("upi", "pay", "bank", "wallet", "money", "payment", "finance")
+            
+            allInstalledApps.forEach { appInfo ->
+                try {
+                    val appName = appInfo.loadLabel(packageManager).toString().lowercase()
+                    val packageName = appInfo.packageName.lowercase()
+                    
+                    // Check if app name or package contains payment-related keywords
+                    val isPaymentApp = paymentKeywords.any { keyword ->
+                        appName.contains(keyword) || packageName.contains(keyword)
+                    }
+                    
+                    if (isPaymentApp && !appInfo.packageName.startsWith("com.android.") && 
+                        !appInfo.packageName.startsWith("android.") &&
+                        appInfo.packageName != packageName) { // Don't include our own app
+                        
+                        Log.d("DetailsActivity", "🔍 Found potential payment app: ${appInfo.loadLabel(packageManager)} (${appInfo.packageName})")
+                        
+                        // Create a ResolveInfo for this app
+                        val resolveInfo = android.content.pm.ResolveInfo()
+                        resolveInfo.activityInfo = android.content.pm.ActivityInfo()
+                        resolveInfo.activityInfo.packageName = appInfo.packageName
+                        resolveInfo.activityInfo.applicationInfo = appInfo
+                        allUpiApps.add(resolveInfo)
+                    }
+                } catch (e: Exception) {
+                    // Skip apps we can't read
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("DetailsActivity", "❌ Error searching installed apps: ${e.message}")
+        }
+        
+        val uniqueApps = allUpiApps.distinctBy { it.activityInfo.packageName }
+        Log.d("DetailsActivity", "🔍 === FINAL COMPREHENSIVE RESULT: ${uniqueApps.size} total apps found ===")
+        
+        // Sort apps by name for better display
+        val sortedApps = uniqueApps.sortedBy { resolveInfo ->
+            try {
+                resolveInfo.loadLabel(packageManager).toString()
+            } catch (e: Exception) {
+                resolveInfo.activityInfo.packageName
+            }
+        }
+        
+        sortedApps.forEach { resolveInfo ->
+            try {
+                val appName = resolveInfo.loadLabel(packageManager)
+                Log.d("DetailsActivity", "   📱 $appName (${resolveInfo.activityInfo.packageName})")
+            } catch (e: Exception) {
+                Log.d("DetailsActivity", "   📱 ${resolveInfo.activityInfo.packageName} (name unavailable)")
+            }
+        }
+        
+        return sortedApps
+    }
+
+    /**
+     * Show ALL detected UPI apps in chooser, regardless of compatibility
+     */
+    private fun showUPIAppChooser(upiApps: List<android.content.pm.ResolveInfo>, originalIntent: Intent) {
+        Log.d("DetailsActivity", "🎯 === SHOWING ALL UPI APPS IN CHOOSER ===")
+        
+        try {
+            val allIntents = mutableListOf<Intent>()
+            
+            Log.d("DetailsActivity", "📱 Creating intents for ${upiApps.size} detected apps...")
+            
+            upiApps.forEach { resolveInfo ->
+                val appName = try {
+                    resolveInfo.loadLabel(packageManager).toString()
+                } catch (e: Exception) {
+                    resolveInfo.activityInfo.packageName
+                }
+                
+                Log.d("DetailsActivity", "🔧 Creating intent for: $appName")
+                
+                // Try multiple intent types for each app
+                val intentTypes = listOf(
+                    "upi://pay?pa=neowisedemo.decfin@ypbiz&pn=Merchant&am=2.00&cu=INR&tn=Payment" to "UPI Payment",
+                    "upi://mandate?pa=neowisedemo.decfin@ypbiz&pn=Merchant&am=2.00&cu=INR&tn=Mandate" to "UPI Mandate", 
+                    "upi://pay" to "Basic UPI"
+                )
+                
+                var intentAdded = false
+                
+                // Try UPI intents first
+                for ((uriString, intentType) in intentTypes) {
+                    try {
+                        val testIntent = Intent(Intent.ACTION_VIEW, Uri.parse(uriString)).apply {
+                            setPackage(resolveInfo.activityInfo.packageName)
+                        }
+                        
+                        // Test if this app can handle this intent
+                        val canHandle = packageManager.queryIntentActivities(testIntent, 0)
+                            .any { it.activityInfo.packageName == resolveInfo.activityInfo.packageName }
+                        
+                        if (canHandle) {
+                            allIntents.add(testIntent)
+                            intentAdded = true
+                            Log.d("DetailsActivity", "✅ Added $intentType intent for $appName")
+                            break // Use first working UPI intent
+                        }
+                    } catch (e: Exception) {
+                        Log.d("DetailsActivity", "❌ $intentType failed for $appName: ${e.message}")
+                    }
+                }
+                
+                // If no UPI intent worked, add direct launch intent
+                if (!intentAdded) {
+                    try {
+                        val launchIntent = packageManager.getLaunchIntentForPackage(resolveInfo.activityInfo.packageName)
+                        if (launchIntent != null) {
+                            // Add a note that this will open the app directly
+                            launchIntent.putExtra("DIRECT_LAUNCH", true)
+                            allIntents.add(launchIntent)
+                            intentAdded = true
+                            Log.d("DetailsActivity", "✅ Added direct launch intent for $appName")
+                        }
+                    } catch (e: Exception) {
+                        Log.e("DetailsActivity", "❌ Cannot create launch intent for $appName: ${e.message}")
+                    }
+                }
+                
+                if (!intentAdded) {
+                    Log.w("DetailsActivity", "⚠️ No intent could be created for $appName")
+                }
+            }
+            
+            Log.d("DetailsActivity", "🎯 Created ${allIntents.size} total intents for ${upiApps.size} apps")
+            
+            if (allIntents.isNotEmpty()) {
+                if (allIntents.size == 1) {
+                    // Only one app available
+                    Log.d("DetailsActivity", "🚀 Launching single available app")
+                    startActivity(allIntents[0])
+                } else {
+                    // Multiple apps available - show comprehensive chooser
+                    Log.d("DetailsActivity", "🚀 Creating comprehensive chooser with ${allIntents.size} options")
+                    
+                    val chooserIntent = Intent.createChooser(
+                        allIntents.removeAt(0), 
+                        "Select Payment App (${allIntents.size + 1} apps found)"
+                    )
+                    
+                    if (allIntents.isNotEmpty()) {
+                        chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, allIntents.toTypedArray())
+                    }
+                    
+                    startActivity(chooserIntent)
+                }
+                
+                Log.d("DetailsActivity", "✅ Comprehensive UPI app chooser launched successfully")
+                
+                // Show a toast to inform user about the comprehensive detection
+                Toast.makeText(this, 
+                    "Found ${upiApps.size} payment apps on your device", 
+                    Toast.LENGTH_SHORT).show()
+                    
+            } else {
+                // This should rarely happen now
+                Log.e("DetailsActivity", "❌ No intents could be created for any detected apps")
+                Toast.makeText(this, 
+                    "Found ${upiApps.size} payment apps but cannot launch them. Please check app permissions.", 
+                    Toast.LENGTH_LONG).show()
+            }
+            
+        } catch (e: Exception) {
+            Log.e("DetailsActivity", "❌ Error in comprehensive UPI chooser: ${e.message}", e)
+            Toast.makeText(this, "Error creating app chooser: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /**
+     * Simple test to verify UPI app detection is working
+     */
+    private fun testSimpleUPIDetection() {
+        Log.d("DetailsActivity", "🧪 === SIMPLE UPI DETECTION TEST ===")
+        
+        // Test 1: Check if PhonePe is installed
+        try {
+            packageManager.getPackageInfo("com.phonepe.app", 0)
+            Log.d("DetailsActivity", "✅ PhonePe is installed")
+        } catch (e: Exception) {
+            Log.d("DetailsActivity", "❌ PhonePe not found")
+        }
+        
+        // Test 2: Check if Google Pay is installed
+        try {
+            packageManager.getPackageInfo("com.google.android.apps.nfc.payment", 0)
+            Log.d("DetailsActivity", "✅ Google Pay is installed")
+        } catch (e: Exception) {
+            Log.d("DetailsActivity", "❌ Google Pay not found")
+        }
+        
+        // Test 3: Check if CRED is installed
+        try {
+            packageManager.getPackageInfo("com.dreamplug.androidapp", 0)
+            Log.d("DetailsActivity", "✅ CRED is installed")
+        } catch (e: Exception) {
+            Log.d("DetailsActivity", "❌ CRED not found")
+        }
+        
+        // Test 4: Simple UPI intent test
+        val testIntent = Intent(Intent.ACTION_VIEW, Uri.parse("upi://pay?pa=test@upi&pn=Test&am=1&cu=INR"))
+        val apps = packageManager.queryIntentActivities(testIntent, 0)
+        Log.d("DetailsActivity", "🧪 Simple UPI intent found ${apps.size} apps")
+        
+        Log.d("DetailsActivity", "🧪 === END SIMPLE TEST ===")
+    }
+
+    /**
+     * Validate if an intent can be handled before launching
+     */
+    private fun canHandleIntent(intent: Intent): Boolean {
+        return try {
+            val activities = packageManager.queryIntentActivities(intent, 0)
+            val canHandle = activities.isNotEmpty()
+            Log.d("DetailsActivity", "🔍 Intent validation: ${if (canHandle) "✅ CAN handle" else "❌ CANNOT handle"} - ${activities.size} activities found")
+            canHandle
+        } catch (e: Exception) {
+            Log.e("DetailsActivity", "❌ Error validating intent: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Create a safe UPI intent that apps can actually handle
+     */
+    private fun createSafeUPIIntent(): Intent {
+        Log.d("DetailsActivity", "🛡️ === CREATING SAFE UPI INTENT ===")
+        
+        // Try different UPI schemes in order of preference
+        val upiSchemes = listOf(
+            "upi://pay?pa=neowisedemo.decfin@ypbiz&pn=Merchant&am=2.00&cu=INR&tn=Payment",
+            "upi://pay?pa=test@upi&pn=Test&am=1&cu=INR",
+            "upi://pay",
+            "https://pay.google.com/gp/v/pay?pa=neowisedemo.decfin@ypbiz&pn=Merchant&am=2.00&cu=INR"
+        )
+        
+        for (scheme in upiSchemes) {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(scheme))
+            if (canHandleIntent(intent)) {
+                Log.d("DetailsActivity", "✅ Safe UPI intent created with scheme: $scheme")
+                return intent
+            }
+        }
+        
+        // Fallback: create basic intent
+        Log.d("DetailsActivity", "⚠️ No UPI scheme worked, creating basic ACTION_VIEW intent")
+        return Intent(Intent.ACTION_VIEW, Uri.parse("upi://pay"))
+    }
+
+    /**
+     * Final fallback when no UPI apps are detected
+     */
+    private fun tryFinalUPIFallback() {
+        Log.d("DetailsActivity", "🆘 === FINAL UPI FALLBACK ===")
+        
+        try {
+            // Try the most basic UPI intent possible
+            val basicIntent = Intent(Intent.ACTION_VIEW, Uri.parse("upi://pay"))
+            
+            if (canHandleIntent(basicIntent)) {
+                Log.d("DetailsActivity", "✅ Basic UPI intent can be handled")
+                startActivity(basicIntent)
+                return
+            }
+            
+            // Try web-based UPI
+            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://pay.google.com/gp/v/pay?pa=test@upi"))
+            if (canHandleIntent(webIntent)) {
+                Log.d("DetailsActivity", "✅ Web UPI intent can be handled")
+                startActivity(webIntent)
+                return
+            }
+            
+            // Try opening any of the known UPI apps directly
+            val knownApps = listOf(
+                "com.phonepe.app",
+                "com.google.android.apps.nfc.payment", 
+                "com.dreamplug.androidapp"
+            )
+            
+            for (packageName in knownApps) {
+                try {
+                    val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                    if (launchIntent != null) {
+                        Log.d("DetailsActivity", "✅ Launching $packageName directly")
+                        startActivity(launchIntent)
+                        Toast.makeText(this, "Opened UPI app. Please complete payment manually.", Toast.LENGTH_LONG).show()
+                        return
+                    }
+                } catch (e: Exception) {
+                    Log.d("DetailsActivity", "❌ Cannot launch $packageName: ${e.message}")
+                }
+            }
+            
+            // Absolute final fallback
+            Toast.makeText(this, 
+                "No UPI apps found. Please install PhonePe, Google Pay, or CRED from Play Store.", 
+                Toast.LENGTH_LONG).show()
+            
+        } catch (e: Exception) {
+            Log.e("DetailsActivity", "❌ Final fallback failed: ${e.message}")
+            Toast.makeText(this, "Unable to launch UPI payment: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /**
+     * Show a comprehensive summary of all detected payment apps
+     */
+    private fun showAppDetectionSummary() {
+        Log.d("DetailsActivity", "📊 === COMPREHENSIVE APP DETECTION SUMMARY ===")
+        
+        try {
+            // Get all detected apps
+            val allApps = findAllUPIApps()
+            
+            Log.d("DetailsActivity", "📊 TOTAL DETECTED APPS: ${allApps.size}")
+            Log.d("DetailsActivity", "📊 ========================================")
+            
+            // Categorize apps
+            val knownUpiApps = mutableListOf<String>()
+            val bankApps = mutableListOf<String>()
+            val walletApps = mutableListOf<String>()
+            val otherApps = mutableListOf<String>()
+            
+            allApps.forEach { resolveInfo ->
+                try {
+                    val appName = resolveInfo.loadLabel(packageManager).toString()
+                    val packageName = resolveInfo.activityInfo.packageName
+                    
+                    when {
+                        packageName.contains("phonepe") || packageName.contains("google.android.apps.nfc") || 
+                        packageName.contains("dreamplug") || packageName.contains("paytm") -> {
+                            knownUpiApps.add("$appName ($packageName)")
+                        }
+                        packageName.contains("bank") || appName.lowercase().contains("bank") -> {
+                            bankApps.add("$appName ($packageName)")
+                        }
+                        packageName.contains("wallet") || packageName.contains("money") || 
+                        packageName.contains("pay") -> {
+                            walletApps.add("$appName ($packageName)")
+                        }
+                        else -> {
+                            otherApps.add("$appName ($packageName)")
+                        }
+                    }
+                } catch (e: Exception) {
+                    otherApps.add("${resolveInfo.activityInfo.packageName} (name unavailable)")
+                }
+            }
+            
+            // Log categorized results
+            if (knownUpiApps.isNotEmpty()) {
+                Log.d("DetailsActivity", "📊 POPULAR UPI APPS (${knownUpiApps.size}):")
+                knownUpiApps.forEach { app -> Log.d("DetailsActivity", "   🔥 $app") }
+            }
+            
+            if (bankApps.isNotEmpty()) {
+                Log.d("DetailsActivity", "📊 BANK APPS (${bankApps.size}):")
+                bankApps.forEach { app -> Log.d("DetailsActivity", "   🏦 $app") }
+            }
+            
+            if (walletApps.isNotEmpty()) {
+                Log.d("DetailsActivity", "📊 WALLET/PAYMENT APPS (${walletApps.size}):")
+                walletApps.forEach { app -> Log.d("DetailsActivity", "   💳 $app") }
+            }
+            
+            if (otherApps.isNotEmpty()) {
+                Log.d("DetailsActivity", "📊 OTHER PAYMENT APPS (${otherApps.size}):")
+                otherApps.forEach { app -> Log.d("DetailsActivity", "   📱 $app") }
+            }
+            
+            Log.d("DetailsActivity", "📊 ========================================")
+            Log.d("DetailsActivity", "📊 SUMMARY: Found ${allApps.size} total payment-capable apps")
+            Log.d("DetailsActivity", "📊 - Popular UPI: ${knownUpiApps.size}")
+            Log.d("DetailsActivity", "📊 - Bank Apps: ${bankApps.size}")
+            Log.d("DetailsActivity", "📊 - Wallets: ${walletApps.size}")
+            Log.d("DetailsActivity", "📊 - Others: ${otherApps.size}")
+            
+        } catch (e: Exception) {
+            Log.e("DetailsActivity", "❌ Error creating app summary: ${e.message}")
+        }
+    }
+
     companion object {
         private const val MANDATE_STATUS_REQUEST_CODE = 1002
     }
