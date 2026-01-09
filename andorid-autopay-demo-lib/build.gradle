@@ -73,7 +73,7 @@ afterEvaluate {
             maven(MavenPublication) {
                 groupId = 'com.github.akhilmishra-FE'
                 artifactId = 'SDK-Andorid-Testing'
-                version = project.findProperty('VERSION_NAME') ?: '1.2.9' // Enhanced ResilientInterceptor with longer delays for DNS issues
+                version = project.findProperty('VERSION_NAME') ?: '1.3.0' // Enhanced DNS diagnostics and network troubleshooting guidance
                 
                 // Publish the AAR artifact - this automatically includes AAR and sources JAR
                 from components.release

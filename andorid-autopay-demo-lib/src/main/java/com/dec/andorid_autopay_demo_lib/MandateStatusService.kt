@@ -89,32 +89,66 @@ class MandateStatusService(private val context: Context? = null) {
      */
     private suspend fun testDNSConnectivity() {
         Log.d(TAG, "🔍 === DNS CONNECTIVITY TEST ===")
+        
+        // Test 1: Try to resolve our API host
+        val apiHost = "api.decentro.tech"
+        var apiResolved = false
         try {
-            // Test DNS resolution for our API host
-            val host = "api.decentro.tech"
-            Log.d(TAG, "🔍 Testing DNS resolution for: $host")
-            
+            Log.d(TAG, "🔍 Testing DNS resolution for: $apiHost")
             withContext(Dispatchers.IO) {
-                val addresses = java.net.InetAddress.getAllByName(host)
+                val addresses = java.net.InetAddress.getAllByName(apiHost)
                 Log.d(TAG, "✅ DNS Resolution Success:")
                 addresses.forEach { address ->
                     Log.d(TAG, "   📍 IP: ${address.hostAddress}")
                 }
+                apiResolved = true
             }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ DNS Resolution Failed: ${e.message}")
-            Log.e(TAG, "❌ This may cause UnknownHostException in API calls")
+            Log.e(TAG, "❌ DNS Resolution Failed for $apiHost: ${e.message}")
+        }
+        
+        // Test 2: Try alternative DNS servers
+        if (!apiResolved) {
+            Log.d(TAG, "🔄 Testing alternative connectivity...")
             
-            // Try alternative DNS test
+            // Test Google DNS
             try {
-                Log.d(TAG, "🔄 Testing alternative DNS (Google DNS)...")
                 withContext(Dispatchers.IO) {
                     val googleDNS = java.net.InetAddress.getAllByName("8.8.8.8")
-                    Log.d(TAG, "✅ Alternative DNS works: ${googleDNS[0].hostAddress}")
+                    Log.d(TAG, "✅ Google DNS (8.8.8.8) reachable: ${googleDNS[0].hostAddress}")
                 }
-            } catch (altE: Exception) {
-                Log.e(TAG, "❌ Alternative DNS also failed: ${altE.message}")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Google DNS failed: ${e.message}")
             }
+            
+            // Test Cloudflare DNS
+            try {
+                withContext(Dispatchers.IO) {
+                    val cloudflareDNS = java.net.InetAddress.getAllByName("1.1.1.1")
+                    Log.d(TAG, "✅ Cloudflare DNS (1.1.1.1) reachable: ${cloudflareDNS[0].hostAddress}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Cloudflare DNS failed: ${e.message}")
+            }
+            
+            // Test a well-known host
+            try {
+                withContext(Dispatchers.IO) {
+                    val googleHost = java.net.InetAddress.getAllByName("google.com")
+                    Log.d(TAG, "✅ Google.com resolved: ${googleHost[0].hostAddress}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Google.com resolution failed: ${e.message}")
+            }
+        }
+        
+        // Provide diagnostic summary
+        if (apiResolved) {
+            Log.d(TAG, "🎯 DNS Diagnosis: API host resolution successful")
+        } else {
+            Log.w(TAG, "⚠️ DNS Diagnosis: API host resolution failed")
+            Log.w(TAG, "⚠️ This suggests DNS server issues or network filtering")
+            Log.w(TAG, "⚠️ Consider using mobile data or different WiFi network")
         }
     }
 
@@ -230,17 +264,48 @@ class MandateStatusService(private val context: Context? = null) {
                     if (e is java.net.UnknownHostException) {
                         Log.d(TAG, "🔍 DNS issue detected - testing connectivity before retry...")
                         testDNSConnectivity()
+                        
+                        // Provide troubleshooting guidance
+                        if (attemptNum == maxRetries - 1) { // Last retry
+                            Log.w(TAG, "🚨 === NETWORK TROUBLESHOOTING GUIDE ===")
+                            Log.w(TAG, "🚨 DNS resolution is failing consistently")
+                            Log.w(TAG, "🚨 Possible solutions:")
+                            Log.w(TAG, "   1️⃣ Switch from WiFi to mobile data (or vice versa)")
+                            Log.w(TAG, "   2️⃣ Try a different WiFi network")
+                            Log.w(TAG, "   3️⃣ Check if corporate/school network blocks external APIs")
+                            Log.w(TAG, "   4️⃣ Restart your device's network connection")
+                            Log.w(TAG, "   5️⃣ Contact your network administrator")
+                        }
                     }
                 }
             }
         }
 
-        // If all retries fail, return a FAILED response
+        // If all retries fail, provide detailed error information
         Log.e(TAG, "❌ [FINAL] All API retries failed. Last error: ${lastException?.message}")
+        
+        // Provide specific error message based on exception type
+        val errorMessage = when (lastException) {
+            is java.net.UnknownHostException -> {
+                Log.e(TAG, "🌐 DNS Resolution consistently failed")
+                Log.e(TAG, "💡 Suggestion: Try switching to mobile data or different WiFi network")
+                "DNS resolution failed. Please check your internet connection or try switching networks."
+            }
+            is java.net.SocketTimeoutException -> {
+                Log.e(TAG, "⏱️ Network timeout occurred")
+                Log.e(TAG, "💡 Suggestion: Check network stability")
+                "Network timeout. Please check your internet connection and try again."
+            }
+            else -> {
+                Log.e(TAG, "🔄 General network error occurred")
+                "Network error occurred. Please check your connection and try again."
+            }
+        }
+        
         return MandateStatusResponse(
             mandate_status = "FAILED",
             decentro_mandate_id = decentroMandateId,
-            message = "Failed to get status after $maxRetries attempts. Last error: ${lastException?.javaClass?.simpleName}"
+            message = errorMessage
         )
     }
 
