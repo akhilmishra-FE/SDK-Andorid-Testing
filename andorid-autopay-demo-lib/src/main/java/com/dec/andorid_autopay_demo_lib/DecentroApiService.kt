@@ -14,11 +14,11 @@ import retrofit2.http.Header
 import retrofit2.http.Query
 import java.io.IOException
 import java.net.ConnectException
-import java.util.concurrent.TimeUnit
-import javax.net.ssl.SSLException
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 
 /**
  * Retrofit API interface for Decentro mandate status endpoint.
@@ -94,8 +94,8 @@ object DecentroRetrofitClient {
             .writeTimeout(30, TimeUnit.SECONDS)
             .connectTimeout(15, TimeUnit.SECONDS) // Standard connection timeout.
 
-            // Retry interceptor is still valuable for instant connection failures.
-            .addInterceptor(ResilientInterceptor(maxRetries = 2, initialDelayMs = 500))
+            // Retry interceptor with enhanced delays for DNS issues
+            .addInterceptor(ResilientInterceptor(maxRetries = 3, initialDelayMs = 2000))
 
             // Add the network-level interceptor (logging) last.
             .addInterceptor(loggingInterceptor)
@@ -143,9 +143,21 @@ object DecentroRetrofitClient {
 
                     // If the error is recoverable and we have retries left, wait and retry.
                     if (isRecoverable(e) && attempt < maxRetries) {
-                        Log.d("ResilientInterceptor", "Recoverable error detected. Waiting ${currentDelay}ms before retry ${attempt + 2}...")
+                        // Enhanced delay logic for different exception types
+                        val actualDelay = when (e) {
+                            is UnknownHostException -> {
+                                Log.w("ResilientInterceptor", "🌐 DNS Resolution Failed - using longer delay")
+                                currentDelay * 3 // Triple delay for DNS issues
+                            }
+                            else -> {
+                                Log.d("ResilientInterceptor", "🔄 Network error - using standard delay")
+                                currentDelay
+                            }
+                        }
+                        
+                        Log.d("ResilientInterceptor", "Recoverable error detected. Waiting ${actualDelay}ms before retry ${attempt + 2}...")
                         try {
-                            Thread.sleep(currentDelay)
+                            Thread.sleep(actualDelay)
                         } catch (ie: InterruptedException) {
                             Thread.currentThread().interrupt()
                             throw IOException("Retry attempt was interrupted", ie)
