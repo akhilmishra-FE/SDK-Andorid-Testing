@@ -14,12 +14,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Wallet
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,10 +33,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.dec.andorid_autopay_demo_lib.ui.theme.ButtonGradientEnd
 import com.dec.andorid_autopay_demo_lib.ui.theme.ButtonGradientStart
 import com.dec.andorid_autopay_demo_lib.ui.theme.UpiautopaysdkTheme
@@ -45,6 +53,15 @@ val MainBackground = Color(0xFFFFFFFF)
 val CardBackground = Color(0xFFFFFFFF)
 val LightGrayBackground = Color(0xFFF7F7F7)
 
+// Data class to hold app information for the custom chooser
+data class PaymentAppInfo(
+    val name: String,
+    val packageName: String,
+    val icon: android.graphics.drawable.Drawable?,
+    val intent: Intent,
+    val isUpiCompatible: Boolean
+)
+
 class DetailsActivity : ComponentActivity() {
     
     private lateinit var currentName: String
@@ -54,6 +71,16 @@ class DetailsActivity : ComponentActivity() {
     private lateinit var currentTxnId: String
     private lateinit var currentAmount: String
     private var merchantPackage: String? = null
+    
+    // State for custom UPI app chooser dialog
+    private var showAppChooser by mutableStateOf(false)
+    private var detectedApps by mutableStateOf<List<PaymentAppInfo>>(emptyList())
+    
+    // Cache for UPI apps - populated during initialization for instant access
+    private var cachedUpiApps: List<android.content.pm.ResolveInfo>? = null
+    private var isAppDetectionInProgress = false
+    
+    // UPI flow tracking (auto status checking removed)
     
     private val editAccountLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -93,6 +120,9 @@ class DetailsActivity : ComponentActivity() {
         currentTxnId = intent.getStringExtra("TXN_ID") ?: ""
         currentAmount = intent.getStringExtra("AMOUNT") ?: ""
         merchantPackage = intent.getStringExtra("MERCHANT_PACKAGE")
+        
+        // Initialize UPI app detection in background for instant access
+        initializeUpiAppDetection()
 
         setContent {
             UpiautopaysdkTheme {
@@ -107,6 +137,18 @@ class DetailsActivity : ComponentActivity() {
                     onEdit = { openEditScreen() },
                     onPayViaCred = { launchUPIMandateFlow() }
                 )
+                
+                // Custom UPI App Chooser Dialog
+                if (showAppChooser) {
+                    CustomUPIAppChooserDialog(
+                        apps = detectedApps,
+                        onAppSelected = { appInfo ->
+                            showAppChooser = false
+                            launchSelectedApp(appInfo)
+                        },
+                        onDismiss = { showAppChooser = false }
+                    )
+                }
             }
         }
     }
@@ -131,14 +173,14 @@ class DetailsActivity : ComponentActivity() {
         Log.d("DetailsActivity", "🚀 Deep Link: $deepLink")
         Log.d("DetailsActivity", "🚀 Mandate ID: $mandateId")
         
-        // Debug UPI app support
-        debugUPIAppSupport()
+        // Skip debug methods for faster launch - use cached detection
+        Log.d("DetailsActivity", "🚀 === INSTANT UPI APP LAUNCH (CACHED) ===")
         
-        // Test simple UPI app detection
-        testSimpleUPIDetection()
-        
-        // Show comprehensive app detection summary
-        showAppDetectionSummary()
+        // Check if cache is ready
+        if (cachedUpiApps == null && isAppDetectionInProgress) {
+            Log.d("DetailsActivity", "⏳ Cache not ready yet, initializing detection...")
+            // Cache will be ready very soon, proceed with detection
+        }
         
         try {
             val uri = Uri.parse(deepLink)
@@ -168,7 +210,7 @@ class DetailsActivity : ComponentActivity() {
             
             if (allUpiApps.isNotEmpty()) {
                 // Store mandate ID BEFORE launching UPI app
-                storeMandateIdForStatusCheck(mandateId)
+                Log.d("DetailsActivity", "💾 Mandate ID: $mandateId")
                 
                 // Try mandate first, if no apps support it, use basic payment
                 val mandateApps = packageManager.queryIntentActivities(upiIntent, 0)
@@ -202,7 +244,7 @@ class DetailsActivity : ComponentActivity() {
                     Log.d("DetailsActivity", "⚠️ Mandate not supported, trying generic UPI payment as fallback")
                     
                     // Store mandate ID anyway
-                    storeMandateIdForStatusCheck(mandateId)
+                    Log.d("DetailsActivity", "💾 Mandate ID: $mandateId")
                     
                     // Try to launch generic UPI payment
                     val chooser = Intent.createChooser(fallbackIntent, "Select UPI App (Mandate not supported)")
@@ -226,112 +268,20 @@ class DetailsActivity : ComponentActivity() {
         }
     }
     
-    // Store mandate ID in SharedPreferences for later use
-    private fun storeMandateIdForStatusCheck(mandateId: String) {
-        val prefs = getSharedPreferences("UPI_MANDATE_PREFS", Context.MODE_PRIVATE)
-        val timestamp = System.currentTimeMillis()
-        
-        prefs.edit().apply {
-            putString("PENDING_MANDATE_ID", mandateId)
-            putLong("MANDATE_TIMESTAMP", timestamp)
-            apply()
-        }
-        
-        Log.d("DetailsActivity", "💾 === STORED MANDATE FOR LATER ===")
-        Log.d("DetailsActivity", "💾 Mandate ID: $mandateId")
-        Log.d("DetailsActivity", "💾 Timestamp: $timestamp")
-        
-       
-    }
-    
-    // Check if there's a pending mandate to check status for
-    private fun checkForPendingMandateStatus() {
-        Log.d("DetailsActivity", "🔍 === CHECKING FOR PENDING MANDATE STATUS ===")
-        
-        val prefs = getSharedPreferences("UPI_MANDATE_PREFS", Context.MODE_PRIVATE)
-        val pendingMandateId = prefs.getString("PENDING_MANDATE_ID", null)
-        val timestamp = prefs.getLong("MANDATE_TIMESTAMP", 0)
-        
-        Log.d("DetailsActivity", "🔍 SharedPreferences Check:")
-        Log.d("DetailsActivity", "   📋 Pending Mandate ID: $pendingMandateId")
-        Log.d("DetailsActivity", "   ⏰ Stored Timestamp: $timestamp")
-        
-        if (pendingMandateId != null) {
-            // Check if mandate was created within last 10 minutes (reasonable time window)
-            val currentTime = System.currentTimeMillis()
-            val timeDiff = currentTime - timestamp
-            val tenMinutesInMillis = 10 * 60 * 1000
-            
-            Log.d("DetailsActivity", "🔍 Time Analysis:")
-            Log.d("DetailsActivity", "   🕐 Current time: $currentTime")
-            Log.d("DetailsActivity", "   ⏳ Time difference: ${timeDiff / 1000} seconds")
-            Log.d("DetailsActivity", "   ⏱️ Max allowed: ${tenMinutesInMillis / 1000} seconds")
-            
-            if (timeDiff < tenMinutesInMillis) {
-                Log.d("DetailsActivity", "✅ === VALID PENDING MANDATE FOUND ===")
-                Log.d("DetailsActivity", "✅ Mandate ID: $pendingMandateId")
-                Log.d("DetailsActivity", "✅ Age: ${timeDiff / 1000}s (valid)")
-                Log.d("DetailsActivity", "✅ Launching MandateStatusActivity...")
-                
-                // Clear the stored mandate ID
-                prefs.edit().remove("PENDING_MANDATE_ID").remove("MANDATE_TIMESTAMP").apply()
-                Log.d("DetailsActivity", "🧹 Cleared stored mandate from SharedPreferences")
-                
-                // Launch status activity
-                launchStatusActivity(pendingMandateId)
-            } else {
-                Log.d("DetailsActivity", "❌ === PENDING MANDATE TOO OLD ===")
-                Log.d("DetailsActivity", "❌ Mandate ID: $pendingMandateId")
-                Log.d("DetailsActivity", "❌ Age: ${timeDiff / 1000}s (expired)")
-                Log.d("DetailsActivity", "❌ Cleaning up expired mandate...")
-                prefs.edit().remove("PENDING_MANDATE_ID").remove("MANDATE_TIMESTAMP").apply()
-                Log.d("DetailsActivity", "🧹 Removed expired mandate from SharedPreferences")
-            }
-        } else {
-            Log.d("DetailsActivity", "ℹ️ === NO PENDING MANDATE FOUND ===")
-            Log.d("DetailsActivity", "ℹ️ SharedPreferences is clean - no pending payment to check")
-        }
-    }
-    
-    // Launch status activity and wait for result
-    private fun launchStatusActivity(mandateId: String) {
-        Log.d("DetailsActivity", "🚀 === LAUNCHING MANDATE STATUS ACTIVITY ===")
-        Log.d("DetailsActivity", "🚀 Mandate ID: $mandateId")
-        Log.d("DetailsActivity", "🚀 Merchant Package: $merchantPackage")
-        Log.d("DetailsActivity", "🚀 Timestamp: ${System.currentTimeMillis()}")
-        
-        val statusIntent = Intent(this, MandateStatusActivity::class.java).apply {
-            putExtra("MANDATE_ID", mandateId)
-            // Pass merchant package name if available
-            merchantPackage?.let {
-                putExtra("MERCHANT_PACKAGE", it)
-                Log.d("DetailsActivity", "🚀 Added MERCHANT_PACKAGE to intent: $it")
-            }
-        }
-        
-        Log.d("DetailsActivity", "🚀 Starting MandateStatusActivity for result...")
-        startActivityForResult(statusIntent, MANDATE_STATUS_REQUEST_CODE)
-        Log.d("DetailsActivity", "🚀 MandateStatusActivity launched successfully")
-    }
-    
     /**
-     * CRITICAL FIX: Handle result from MandateStatusActivity
-     * When MandateStatusActivity finishes, we also need to finish DetailsActivity
-     * and pass the result to the merchant app
+     * Handle result from MandateStatusActivity (manual checks only)
      */
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         
         if (requestCode == MANDATE_STATUS_REQUEST_CODE) {
-            Log.d("DetailsActivity", "✅ Received result from MandateStatusActivity")
+            Log.d("DetailsActivity", "✅ Manual status check result")
             Log.d("DetailsActivity", "✅ Result Code: $resultCode")
             
-            // Pass the result to whoever called us (LoginActivity or merchant app)
+            // Pass the result to merchant app and finish
             setResult(resultCode, data)
-            
-            // CRITICAL: Finish this activity so we don't stay on this page
             finish()
-            Log.d("DetailsActivity", "✅ DetailsActivity finished - returning to caller")
+            Log.d("DetailsActivity", "✅ DetailsActivity finished - returning to merchant")
         }
     }
     
@@ -392,9 +342,63 @@ class DetailsActivity : ComponentActivity() {
     }
 
     /**
+     * Initialize UPI app detection in background thread for instant access
+     */
+    private fun initializeUpiAppDetection() {
+        if (isAppDetectionInProgress || cachedUpiApps != null) {
+            Log.d("DetailsActivity", "🔄 UPI app detection already in progress or completed")
+            return
+        }
+        
+        isAppDetectionInProgress = true
+        Log.d("DetailsActivity", "🚀 === INITIALIZING UPI APP DETECTION IN BACKGROUND ===")
+        
+        // Run detection in background thread to avoid blocking UI
+        Thread {
+            try {
+                val startTime = System.currentTimeMillis()
+                val apps = performUpiAppDetection()
+                val endTime = System.currentTimeMillis()
+                
+                Log.d("DetailsActivity", "✅ UPI app detection completed in ${endTime - startTime}ms")
+                Log.d("DetailsActivity", "📱 Found ${apps.size} UPI apps and cached for instant access")
+                
+                // Cache the results on main thread
+                runOnUiThread {
+                    cachedUpiApps = apps
+                    isAppDetectionInProgress = false
+                }
+            } catch (e: Exception) {
+                Log.e("DetailsActivity", "❌ Error during UPI app detection: ${e.message}")
+                runOnUiThread {
+                    isAppDetectionInProgress = false
+                }
+            }
+        }.start()
+    }
+    
+    /**
      * Find ALL UPI apps installed on device - comprehensive detection
+     * Now uses caching for instant access after first detection
      */
     private fun findAllUPIApps(): List<android.content.pm.ResolveInfo> {
+        // Return cached results if available
+        cachedUpiApps?.let { cached ->
+            Log.d("DetailsActivity", "⚡ Using cached UPI apps (${cached.size} apps) - INSTANT ACCESS!")
+            return cached
+        }
+        
+        // If not cached yet, perform detection now (fallback)
+        Log.d("DetailsActivity", "🔄 Cache not ready, performing detection now...")
+        return performUpiAppDetection().also { apps ->
+            cachedUpiApps = apps // Cache for next time
+        }
+    }
+    
+    /**
+     * Actual UPI app detection logic (extracted for reuse)
+     */
+    private fun performUpiAppDetection(): List<android.content.pm.ResolveInfo> {
         Log.d("DetailsActivity", "🔍 === FINDING ALL UPI APPS ON DEVICE ===")
         
         val allUpiApps = mutableSetOf<android.content.pm.ResolveInfo>()
@@ -548,15 +552,15 @@ class DetailsActivity : ComponentActivity() {
     }
 
     /**
-     * Show ALL detected UPI apps in chooser, regardless of compatibility
+     * Show custom scrollable dialog with ALL detected UPI apps
      */
     private fun showUPIAppChooser(upiApps: List<android.content.pm.ResolveInfo>, originalIntent: Intent) {
-        Log.d("DetailsActivity", "🎯 === SHOWING ALL UPI APPS IN CHOOSER ===")
+        Log.d("DetailsActivity", "🎯 === CREATING CUSTOM SCROLLABLE UPI CHOOSER ===")
         
         try {
-            val allIntents = mutableListOf<Intent>()
+            val appInfoList = mutableListOf<PaymentAppInfo>()
             
-            Log.d("DetailsActivity", "📱 Creating intents for ${upiApps.size} detected apps...")
+            Log.d("DetailsActivity", "📱 Preparing ${upiApps.size} apps for custom chooser...")
             
             upiApps.forEach { resolveInfo ->
                 val appName = try {
@@ -565,7 +569,13 @@ class DetailsActivity : ComponentActivity() {
                     resolveInfo.activityInfo.packageName
                 }
                 
-                Log.d("DetailsActivity", "🔧 Creating intent for: $appName")
+                val appIcon = try {
+                    resolveInfo.loadIcon(packageManager)
+                } catch (e: Exception) {
+                    null
+                }
+                
+                Log.d("DetailsActivity", "🔧 Processing app: $appName")
                 
                 // Try multiple intent types for each app
                 val intentTypes = listOf(
@@ -574,13 +584,17 @@ class DetailsActivity : ComponentActivity() {
                     "upi://pay" to "Basic UPI"
                 )
                 
-                var intentAdded = false
+                var appIntent: Intent? = null
+                var isUpiCompatible = false
                 
                 // Try UPI intents first
                 for ((uriString, intentType) in intentTypes) {
                     try {
                         val testIntent = Intent(Intent.ACTION_VIEW, Uri.parse(uriString)).apply {
                             setPackage(resolveInfo.activityInfo.packageName)
+                            // CRITICAL: Ensure proper task management for background behavior
+                            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                            // Do NOT use FLAG_ACTIVITY_NEW_TASK - keeps apps in same task stack
                         }
                         
                         // Test if this app can handle this intent
@@ -588,9 +602,9 @@ class DetailsActivity : ComponentActivity() {
                             .any { it.activityInfo.packageName == resolveInfo.activityInfo.packageName }
                         
                         if (canHandle) {
-                            allIntents.add(testIntent)
-                            intentAdded = true
-                            Log.d("DetailsActivity", "✅ Added $intentType intent for $appName")
+                            appIntent = testIntent
+                            isUpiCompatible = true
+                            Log.d("DetailsActivity", "✅ $appName supports $intentType")
                             break // Use first working UPI intent
                         }
                     } catch (e: Exception) {
@@ -598,68 +612,130 @@ class DetailsActivity : ComponentActivity() {
                     }
                 }
                 
-                // If no UPI intent worked, add direct launch intent
-                if (!intentAdded) {
+                // If no UPI intent worked, create direct launch intent
+                if (appIntent == null) {
                     try {
-                        val launchIntent = packageManager.getLaunchIntentForPackage(resolveInfo.activityInfo.packageName)
-                        if (launchIntent != null) {
-                            // Add a note that this will open the app directly
-                            launchIntent.putExtra("DIRECT_LAUNCH", true)
-                            allIntents.add(launchIntent)
-                            intentAdded = true
-                            Log.d("DetailsActivity", "✅ Added direct launch intent for $appName")
+                        appIntent = packageManager.getLaunchIntentForPackage(resolveInfo.activityInfo.packageName)
+                        if (appIntent != null) {
+                            Log.d("DetailsActivity", "✅ Created direct launch intent for $appName")
                         }
                     } catch (e: Exception) {
                         Log.e("DetailsActivity", "❌ Cannot create launch intent for $appName: ${e.message}")
                     }
                 }
                 
-                if (!intentAdded) {
-                    Log.w("DetailsActivity", "⚠️ No intent could be created for $appName")
+                // Add to list if we have a valid intent
+                if (appIntent != null) {
+                    appInfoList.add(
+                        PaymentAppInfo(
+                            name = appName,
+                            packageName = resolveInfo.activityInfo.packageName,
+                            icon = appIcon,
+                            intent = appIntent,
+                            isUpiCompatible = isUpiCompatible
+                        )
+                    )
+                    Log.d("DetailsActivity", "✅ Added $appName to custom chooser")
+                } else {
+                    Log.w("DetailsActivity", "⚠️ Could not create intent for $appName")
                 }
             }
             
-            Log.d("DetailsActivity", "🎯 Created ${allIntents.size} total intents for ${upiApps.size} apps")
+            Log.d("DetailsActivity", "🎯 Prepared ${appInfoList.size} apps for custom chooser")
             
-            if (allIntents.isNotEmpty()) {
-                if (allIntents.size == 1) {
-                    // Only one app available
-                    Log.d("DetailsActivity", "🚀 Launching single available app")
-                    startActivity(allIntents[0])
+            if (appInfoList.isNotEmpty()) {
+                // Filter to show ONLY UPI-compatible apps
+                val upiOnlyApps = appInfoList.filter { it.isUpiCompatible }
+                
+                if (upiOnlyApps.isNotEmpty()) {
+                    // Sort UPI apps alphabetically
+                    val sortedUpiApps = upiOnlyApps.sortedBy { it.name }
+                    
+                // If only one UPI app, launch immediately without showing dialog
+                if (sortedUpiApps.size == 1) {
+                    Log.d("DetailsActivity", "✅ Only one UPI app found, launching immediately: ${sortedUpiApps[0].name}")
+                    launchSelectedApp(sortedUpiApps[0])
                 } else {
-                    // Multiple apps available - show comprehensive chooser
-                    Log.d("DetailsActivity", "🚀 Creating comprehensive chooser with ${allIntents.size} options")
+                    // Show custom dialog for multiple UPI apps
+                    detectedApps = sortedUpiApps
+                    showAppChooser = true
                     
-                    val chooserIntent = Intent.createChooser(
-                        allIntents.removeAt(0), 
-                        "Select Payment App (${allIntents.size + 1} apps found)"
-                    )
+                    Log.d("DetailsActivity", "✅ Custom UPI-only chooser dialog shown with ${sortedUpiApps.size} UPI apps")
                     
-                    if (allIntents.isNotEmpty()) {
-                        chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, allIntents.toTypedArray())
-                    }
-                    
-                    startActivity(chooserIntent)
+                    // Show toast
+                    Toast.makeText(this, 
+                        "Found ${sortedUpiApps.size} UPI-compatible apps", 
+                        Toast.LENGTH_SHORT).show()
                 }
-                
-                Log.d("DetailsActivity", "✅ Comprehensive UPI app chooser launched successfully")
-                
-                // Show a toast to inform user about the comprehensive detection
-                Toast.makeText(this, 
-                    "Found ${upiApps.size} payment apps on your device", 
-                    Toast.LENGTH_SHORT).show()
+                } else {
+                    Log.w("DetailsActivity", "⚠️ No UPI-compatible apps found")
+                    Toast.makeText(this, 
+                        "No UPI-compatible apps found. Please install PhonePe, Google Pay, or CRED.", 
+                        Toast.LENGTH_LONG).show()
+                }
                     
             } else {
-                // This should rarely happen now
-                Log.e("DetailsActivity", "❌ No intents could be created for any detected apps")
+                Log.e("DetailsActivity", "❌ No valid apps for custom chooser")
                 Toast.makeText(this, 
                     "Found ${upiApps.size} payment apps but cannot launch them. Please check app permissions.", 
                     Toast.LENGTH_LONG).show()
             }
             
         } catch (e: Exception) {
-            Log.e("DetailsActivity", "❌ Error in comprehensive UPI chooser: ${e.message}", e)
+            Log.e("DetailsActivity", "❌ Error creating custom UPI chooser: ${e.message}", e)
             Toast.makeText(this, "Error creating app chooser: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+    
+    /**
+     * Launch the selected app ensuring SDK stays in background (not replaced)
+     */
+    private fun launchSelectedApp(appInfo: PaymentAppInfo) {
+        Log.d("DetailsActivity", "🚀 Launching selected app: ${appInfo.name}")
+        
+        try {
+            // CRITICAL: Create intent that opens UPI app WITHOUT replacing SDK
+            val finalIntent = Intent(appInfo.intent).apply {
+                // Clear all existing flags that might cause replacement
+                flags = 0
+                
+                // CRITICAL FLAGS: These ensure UPI app opens in NEW TASK, SDK stays in background
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                
+                // Additional flags for proper behavior
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            
+            Log.d("DetailsActivity", "🚀 === LAUNCHING UPI APP ===")
+            Log.d("DetailsActivity", "🚀 App: ${appInfo.name}")
+            Log.d("DetailsActivity", "🚀 Package: ${appInfo.packageName}")
+            Log.d("DetailsActivity", "🚀 Intent flags: ${finalIntent.flags}")
+            Log.d("DetailsActivity", "🚀 Intent action: ${finalIntent.action}")
+            Log.d("DetailsActivity", "🚀 Intent data: ${finalIntent.data}")
+            
+            // Store mandate ID BEFORE launching app
+            val mandateService = MandateStatusService()
+            val mandateId = mandateService.generateMandateId()
+            Log.d("DetailsActivity", "💾 Mandate ID: $mandateId")
+            
+            // Store mandate ID for status checking when user returns
+            storeMandateId(mandateId)
+            Log.d("DetailsActivity", "💾 Stored mandate ID for return: $mandateId")
+            
+            // Launch UPI app in new task
+            startActivity(finalIntent)
+            
+            Log.d("DetailsActivity", "✅ Successfully launched ${appInfo.name}")
+            Log.d("DetailsActivity", "✅ SDK remains in background, ${appInfo.name} opened in new task")
+            Log.d("DetailsActivity", "✅ User will return to SDK after completing payment")
+            
+            Log.d("DetailsActivity", "✅ UPI app launched - user will return manually")
+            
+        } catch (e: Exception) {
+            Log.e("DetailsActivity", "❌ Error launching ${appInfo.name}: ${e.message}")
+            Toast.makeText(this, "Error launching ${appInfo.name}: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -877,10 +953,12 @@ class DetailsActivity : ComponentActivity() {
         }
     }
 
-    companion object {
-        private const val MANDATE_STATUS_REQUEST_CODE = 1002
-    }
-    
+
+
+
+
+
+
     override fun onResume() {
         super.onResume()
         Log.d("DetailsActivity", "🔄 ========================================")
@@ -888,18 +966,69 @@ class DetailsActivity : ComponentActivity() {
         Log.d("DetailsActivity", "🔄 ========================================")
         Log.d("DetailsActivity", "🔄 User returned to DetailsActivity")
         Log.d("DetailsActivity", "🔄 Resume Timestamp: ${System.currentTimeMillis()}")
-        Log.d("DetailsActivity", "🔄 Thread: ${Thread.currentThread().name}")
-        Log.d("DetailsActivity", "🔄 Lifecycle State: RESUMED")
         
-        // Immediate check for pending mandate status when user returns
-        // Use a small delay to ensure UI is ready, then check immediately
-        Log.d("DetailsActivity", "🔄 Scheduling mandate check with 100ms delay")
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            Log.d("DetailsActivity", "🔄 Handler callback executing - checking mandate status")
-            checkForPendingMandateStatus()
-        }, 100) // Very small delay for immediate response
+        // Check if user returned from PSP app and invoke status API
+        val storedMandateId = getStoredMandateId()
+        if (storedMandateId != null) {
+            Log.d("DetailsActivity", "🔄 Found stored mandate ID: $storedMandateId")
+            Log.d("DetailsActivity", "🔄 User returned from PSP app - invoking status API")
+            clearStoredMandateId() // Clear immediately to avoid duplicate calls
+            invokeStatusAPI(storedMandateId)
+        } else {
+            Log.d("DetailsActivity", "🔄 No stored mandate ID - user did not return from PSP app")
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d("DetailsActivity", "🔄 DetailsActivity destroyed")
+    }
+
+    /**
+     * Store mandate ID in SharedPreferences when launching PSP app
+     */
+    private fun storeMandateId(mandateId: String) {
+        val sharedPrefs = getSharedPreferences("UPI_SDK_PREFS", Context.MODE_PRIVATE)
+        sharedPrefs.edit().putString("PENDING_MANDATE_ID", mandateId).apply()
+        Log.d("DetailsActivity", "💾 Stored mandate ID: $mandateId")
     }
     
+    /**
+     * Get stored mandate ID from SharedPreferences
+     */
+    private fun getStoredMandateId(): String? {
+        val sharedPrefs = getSharedPreferences("UPI_SDK_PREFS", Context.MODE_PRIVATE)
+        return sharedPrefs.getString("PENDING_MANDATE_ID", null)
+    }
+    
+    /**
+     * Clear stored mandate ID from SharedPreferences
+     */
+    private fun clearStoredMandateId() {
+        val sharedPrefs = getSharedPreferences("UPI_SDK_PREFS", Context.MODE_PRIVATE)
+        sharedPrefs.edit().remove("PENDING_MANDATE_ID").apply()
+        Log.d("DetailsActivity", "🗑️ Cleared stored mandate ID")
+    }
+    
+    /**
+     * Invoke status API when returning from PSP app
+     */
+    private fun invokeStatusAPI(mandateId: String) {
+        Log.d("DetailsActivity", "📡 ========================================")
+        Log.d("DetailsActivity", "📡 === INVOKING STATUS API ===")
+        Log.d("DetailsActivity", "📡 ========================================")
+        Log.d("DetailsActivity", "📡 Mandate ID: $mandateId")
+        
+        // Launch MandateStatusActivity to check status
+        val intent = Intent(this, MandateStatusActivity::class.java).apply {
+            putExtra("MANDATE_ID", mandateId)
+        }
+        startActivityForResult(intent, MANDATE_STATUS_REQUEST_CODE)
+    }
+
+    companion object {
+        private const val MANDATE_STATUS_REQUEST_CODE = 1002
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1112,6 +1241,177 @@ fun InfoColumn(title: String, value: String, modifier: Modifier = Modifier, alig
     }
 }
 
+
+/**
+ * Custom scrollable dialog to show all detected UPI/Payment apps
+ */
+@Composable
+fun CustomUPIAppChooserDialog(
+    apps: List<PaymentAppInfo>,
+    onAppSelected: (PaymentAppInfo) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .fillMaxHeight(0.8f),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                Text(
+                    text = "Select UPI App",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Close")
+                }
+            }
+            
+            Text(
+                text = "Found ${apps.size} UPI-compatible apps",
+                style = MaterialTheme.typography.bodyMedium,
+                color = GrayText,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+                
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                
+                // Scrollable app list
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(apps) { appInfo ->
+                        PaymentAppItem(
+                            appInfo = appInfo,
+                            onClick = { onAppSelected(appInfo) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Individual app item in the chooser dialog
+ */
+@Composable
+fun PaymentAppItem(
+    appInfo: PaymentAppInfo,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = LightBlue // All apps shown are UPI-compatible
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // App icon
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.White),
+                contentAlignment = Alignment.Center
+            ) {
+                if (appInfo.icon != null) {
+                    // Convert drawable to ImageBitmap and display
+                    val bitmap = android.graphics.Bitmap.createBitmap(
+                        appInfo.icon.intrinsicWidth.takeIf { it > 0 } ?: 48,
+                        appInfo.icon.intrinsicHeight.takeIf { it > 0 } ?: 48,
+                        android.graphics.Bitmap.Config.ARGB_8888
+                    )
+                    val canvas = android.graphics.Canvas(bitmap)
+                    appInfo.icon.setBounds(0, 0, canvas.width, canvas.height)
+                    appInfo.icon.draw(canvas)
+                    
+                    androidx.compose.foundation.Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = appInfo.name,
+                        modifier = Modifier.size(40.dp)
+                    )
+                } else {
+                    // Fallback icon
+                    Icon(
+                        Icons.Outlined.Wallet,
+                        contentDescription = appInfo.name,
+                        modifier = Modifier.size(32.dp),
+                        tint = BlueText
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            // App info
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = appInfo.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                
+                Text(
+                    text = "UPI Compatible", // All shown apps are UPI-compatible
+                    style = MaterialTheme.typography.bodySmall,
+                    color = BlueText
+                )
+                
+                Text(
+                    text = appInfo.packageName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GrayText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            
+            // Arrow indicator
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = "Launch",
+                tint = BlueText, // All shown apps are UPI-compatible
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
 
 @Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
 @Composable

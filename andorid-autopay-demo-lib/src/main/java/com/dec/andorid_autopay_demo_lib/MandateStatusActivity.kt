@@ -163,149 +163,102 @@ fun MandateStatusScreen(
     val mandateService = remember { MandateStatusService(context) }
     
     LaunchedEffect(mandateId) {
-        Log.d("MandateStatusScreen", "Starting status check for mandate: $mandateId")
-        Log.d("MandateStatusScreen", "🚀 Calling mandateService.checkMandateStatus()...")
+        Log.d("MandateStatusScreen", "🚀 === STARTING STATUS CHECK WITH 5 SECOND TIMEOUT ===")
+        Log.d("MandateStatusScreen", "🚀 Mandate ID: $mandateId")
         
         val startTime = System.currentTimeMillis()
-        val response = mandateService.checkMandateStatus(mandateId)
-        val endTime = System.currentTimeMillis()
         
-        Log.d("MandateStatusScreen", "API call completed in ${endTime - startTime}ms")
-        statusResponse = response
-        Log.d("MandateStatusScreen", "Status: ${response.mandate_status}")
-        
-        currentStatus = when(response.mandate_status.uppercase()) {
-            "SUCCESS", "COMPLETED" -> MandateStatus.SUCCESS
-            "FAILED", "FAILURE", "ERROR" -> MandateStatus.FAILED
-            "PENDING", "INITIATED" -> MandateStatus.PENDING
-            else -> MandateStatus.PROCESSING
-        }
-        
-        Log.d("MandateStatusScreen", "📊 Current Status after first check: $currentStatus")
-        
-        // If still processing or pending, do a second check after shorter delay
-        if (currentStatus == MandateStatus.PROCESSING || currentStatus == MandateStatus.PENDING) {
-            Log.d("MandateStatusScreen", "🔄 === SECOND CHECK NEEDED ===")
-            Log.d("MandateStatusScreen", "🔄 Current status requires retry: $currentStatus")
-            Log.d("MandateStatusScreen", "⏳ No delay - checking immediately...")
-            delay(500) // IMMEDIATE: Minimal delay for status update
-            
-            // Second API call for updated status
-            Log.d("MandateStatusScreen", "🚀 === SECOND API CALL ===")
-            Log.d("MandateStatusScreen", "🚀 Calling mandateService.checkMandateStatus($mandateId)")
-            val secondResponse = mandateService.checkMandateStatus(mandateId)
-            statusResponse = secondResponse
-            
-            Log.d("MandateStatusScreen", "📡 === SECOND API RESPONSE ===")
-            Log.d("MandateStatusScreen", "📡 Response: $secondResponse")
-            Log.d("MandateStatusScreen", "📡 Status: ${secondResponse.mandate_status}")
-            
-            currentStatus = when(secondResponse.mandate_status.uppercase()) {
-                "SUCCESS", "COMPLETED" -> {
-                    Log.d("MandateStatusScreen", "✅ Second check: Status mapped to SUCCESS")
-                    MandateStatus.SUCCESS
-                }
-                "FAILED", "FAILURE", "ERROR" -> {
-                    Log.d("MandateStatusScreen", "❌ Second check: Status mapped to FAILED")
-                    MandateStatus.FAILED
-                }
-                "PENDING", "INITIATED" -> {
-                    Log.d("MandateStatusScreen", "⏳ Second check: Status mapped to PENDING")
-                    MandateStatus.PENDING
-                }
-                else -> {
-                    Log.d("MandateStatusScreen", "🔄 Second check: Status mapped to PROCESSING")
-                    MandateStatus.PROCESSING
-                }
-            }
-            
-            Log.d("MandateStatusScreen", "📊 Current Status after second check: $currentStatus")
-            
-            // If still processing/pending after second check, do one final check
-            if (currentStatus == MandateStatus.PROCESSING || currentStatus == MandateStatus.PENDING) {
-                Log.d("MandateStatusScreen", "🔄 === FINAL CHECK NEEDED ===")
-                Log.d("MandateStatusScreen", "🔄 Still not final status: $currentStatus")
-                Log.d("MandateStatusScreen", "⏳ No delay - final check immediately...")
-                delay(500) // IMMEDIATE: Minimal delay for final check
+        try {
+            // Set a 5-second timeout for the entire status checking process
+            kotlinx.coroutines.withTimeout(5000L) {
+                Log.d("MandateStatusScreen", "🚀 Making API call...")
                 
-                Log.d("MandateStatusScreen", "🚀 === FINAL API CALL ===")
-                Log.d("MandateStatusScreen", "🚀 Calling mandateService.checkMandateStatus($mandateId)")
-                val finalResponse = mandateService.checkMandateStatus(mandateId)
+                val response = mandateService.checkMandateStatus(mandateId)
+                val endTime = System.currentTimeMillis()
                 
-                Log.d("MandateStatusScreen", "📡 === FINAL API RESPONSE ===")
-                Log.d("MandateStatusScreen", "📡 Response: $finalResponse")
-                Log.d("MandateStatusScreen", "📡 Status: ${finalResponse.mandate_status}")
+                Log.d("MandateStatusScreen", "✅ API call completed in ${endTime - startTime}ms")
+                statusResponse = response
+                Log.d("MandateStatusScreen", "📡 Status: ${response.mandate_status}")
                 
-                currentStatus = when(finalResponse.mandate_status.uppercase()) {
+                currentStatus = when(response.mandate_status.uppercase()) {
                     "SUCCESS", "COMPLETED" -> {
-                        Log.d("MandateStatusScreen", "✅ Final check: Status mapped to SUCCESS")
+                        Log.d("MandateStatusScreen", "✅ Status: SUCCESS")
                         MandateStatus.SUCCESS
                     }
                     "FAILED", "FAILURE", "ERROR" -> {
-                        Log.d("MandateStatusScreen", "❌ Final check: Status mapped to FAILED")
+                        Log.d("MandateStatusScreen", "❌ Status: FAILED")
                         MandateStatus.FAILED
                     }
+                    "PENDING", "INITIATED" -> {
+                        Log.d("MandateStatusScreen", "⏳ Status: PENDING")
+                        MandateStatus.PENDING
+                    }
                     else -> {
-                        Log.e("MandateStatusScreen", "❌ Final check: Unknown status - showing FAILED")
-                        MandateStatus.FAILED // Show failed for unknown/error states
+                        Log.d("MandateStatusScreen", "🔄 Status: PROCESSING")
+                        MandateStatus.PROCESSING
                     }
                 }
                 
                 Log.d("MandateStatusScreen", "📊 Final Status: $currentStatus")
+                
+                // If not success or failed, treat as failed after timeout
+                if (currentStatus == MandateStatus.PROCESSING || currentStatus == MandateStatus.PENDING) {
+                    Log.d("MandateStatusScreen", "⚠️ Status still not final, but within timeout - keeping current status")
+                }
             }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            // 5-second timeout reached - force failure
+            Log.d("MandateStatusScreen", "❌ === 5 SECOND TIMEOUT REACHED ===")
+            Log.d("MandateStatusScreen", "❌ API did not respond within 5 seconds")
+            Log.d("MandateStatusScreen", "❌ Forcing status to FAILED")
+            
+            currentStatus = MandateStatus.FAILED
+            statusResponse = MandateStatusResponse(
+                mandate_status = "FAILED",
+                decentro_mandate_id = mandateId,
+                message = "Payment status could not be confirmed within 5 seconds"
+            )
+        } catch (e: Exception) {
+            // Any other error - force failure
+            Log.e("MandateStatusScreen", "❌ Error during status check: ${e.message}")
+            currentStatus = MandateStatus.FAILED
+            statusResponse = MandateStatusResponse(
+                mandate_status = "FAILED", 
+                decentro_mandate_id = mandateId,
+                message = "Error checking payment status: ${e.message}"
+            )
         }
         
-        // IMPORTANT: Auto-redirect to merchant app ONLY for SUCCESS and FAILED statuses
-        // PENDING/PROCESSING statuses will keep SDK open for user interaction
-        Log.d("MandateStatusScreen", "🎯 ========================================")
-        Log.d("MandateStatusScreen", "🎯 === FINAL STATUS REACHED ===")
-        Log.d("MandateStatusScreen", "🎯 ========================================")
+        val totalTime = System.currentTimeMillis() - startTime
+        Log.d("MandateStatusScreen", "🏁 Status check completed in ${totalTime}ms with status: $currentStatus")
+        
+        // Auto-redirect based on final status
+        Log.d("MandateStatusScreen", "🎯 === DETERMINING NEXT ACTION ===")
         Log.d("MandateStatusScreen", "🎯 Final Status: $currentStatus")
-        Log.d("MandateStatusScreen", "🎯 Status Response: $statusResponse")
-        Log.d("MandateStatusScreen", "🎯 Timer Start: ${System.currentTimeMillis()}")
         
-        Log.d("MandateStatusScreen", "📊 === STATUS CHECK COMPLETED ===")
-        Log.d("MandateStatusScreen", "📊 Final Status: $currentStatus")
-        
-        // Only redirect for SUCCESS and FAILED statuses
-        if (currentStatus == MandateStatus.SUCCESS || currentStatus == MandateStatus.FAILED) {
-            Log.d("MandateStatusScreen", "✅ === FINAL STATUS - REDIRECT TO MERCHANT APP ===")
-            Log.d("MandateStatusScreen", "✅ Status: $currentStatus")
-            Log.d("MandateStatusScreen", "✅ Will display status screen for exactly 5 seconds")
-            Log.d("MandateStatusScreen", "✅ Then redirect to merchant app")
-            
-            // Show status for 5 seconds, then redirect to client app
-            Log.d("MandateStatusScreen", "⏳ === STARTING 5-SECOND DISPLAY ===")
-            Log.d("MandateStatusScreen", "⏳ User will see status screen for 5 seconds...")
-            Log.d("MandateStatusScreen", "⏳ Display start time: ${System.currentTimeMillis()}")
-            
-            delay(5000) // Show status for exactly 5 seconds
-            
-            Log.d("MandateStatusScreen", "✅ === 5-SECOND DISPLAY COMPLETED ===")
-            Log.d("MandateStatusScreen", "✅ Display end time: ${System.currentTimeMillis()}")
-            Log.d("MandateStatusScreen", "✅ Now returning result to calling app...")
-            
-            // PROPER ANDROID WAY: Return result to calling app
-            Log.d("MandateStatusScreen", "🏁 === RETURNING RESULT TO CALLING APP ===")
-            Log.d("MandateStatusScreen", "🏁 Status: $currentStatus")
-            Log.d("MandateStatusScreen", "🏁 Response: $statusResponse")
-            
-            if (currentStatus == MandateStatus.SUCCESS) {
+        // Show status screen briefly, then redirect
+        when (currentStatus) {
+            MandateStatus.SUCCESS -> {
+                Log.d("MandateStatusScreen", "✅ SUCCESS - Will show success screen for 2 seconds then redirect")
+                delay(2000) // Show success for 2 seconds
                 activity.returnSuccessResult(statusResponse)
-            } else {
+            }
+            MandateStatus.FAILED -> {
+                Log.d("MandateStatusScreen", "❌ FAILED - Will show failed screen for 2 seconds then redirect")
+                delay(2000) // Show failure for 2 seconds  
                 activity.returnErrorResult(statusResponse)
             }
-        } else {
-            Log.d("MandateStatusScreen", "⏳ === INTERMEDIATE STATUS - STAY IN SDK ===")
-            Log.d("MandateStatusScreen", "⏳ Status: $currentStatus")
-            Log.d("MandateStatusScreen", "⏳ SDK will stay open - no redirect")
-            Log.d("MandateStatusScreen", "⏳ User can manually close or wait for status updates")
-            
-            // For PENDING/PROCESSING - SDK stays open, no redirect
-            // User can manually close or the status will update
+            else -> {
+                // PROCESSING or PENDING - treat as failed after 5 second timeout
+                Log.d("MandateStatusScreen", "⚠️ PROCESSING/PENDING after 5s timeout - treating as FAILED")
+                currentStatus = MandateStatus.FAILED
+                delay(2000) // Show failure for 2 seconds
+                activity.returnErrorResult(statusResponse)
+            }
         }
     }
     
+    // UI Layout
     Box(
         modifier = Modifier
             .fillMaxSize()
